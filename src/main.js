@@ -217,21 +217,49 @@ function setupEventListeners() {
         const text = `Hola Emanuel, me registré en RyR Web.\nMis datos:\nNombre: ${name}\nDNI: ${dni}\nCel: ${phone}\nEmail: ${email}\nPor favor, habilitame las listas de precios.`
         window.open(`https://wa.me/5493624996333?text=${encodeURIComponent(text)}`, '_blank')
       }
+
+      document.getElementById('btn-activate-account').onclick = async () => {
+        const code = document.getElementById('activation-code-input').value
+        const { data: profile } = await supabase.from('profiles').select('*').eq('id', data.user.id).single()
+        
+        if (profile && profile.verification_code === code) {
+          await supabase.from('profiles').update({ is_active: true }).eq('id', data.user.id)
+          alert('¡Cuenta activada con éxito! Ya podés ver tus precios.')
+          location.reload()
+        } else {
+          alert('El código ingresado es incorrecto. Por favor verificalo con Emanuel.')
+        }
+      }
     } catch (e) {
       alert('Error: ' + e.message)
     }
   }
 
-  // Login Logic
   document.getElementById('btn-do-login').onclick = async () => {
     const email = document.getElementById('login-email').value
     const pass = document.getElementById('login-password').value
     try {
       const data = await login(email, pass)
       const { data: profile } = await supabase.from('profiles').select('*').eq('id', data.user.id).single()
+      
       if (profile && !profile.is_active) {
-        alert('Tu cuenta está pendiente de activación por Emanuel.')
+        document.getElementById('login-section').classList.add('hidden')
+        document.getElementById('post-signup-section').classList.remove('hidden')
+        
+        // Re-vincular el botón de activar por si ya tenía cuenta pero no activó
+        document.getElementById('btn-activate-account').onclick = async () => {
+          const code = document.getElementById('activation-code-input').value
+          if (profile.verification_code === code) {
+            await supabase.from('profiles').update({ is_active: true }).eq('id', data.user.id)
+            alert('¡Cuenta activada!')
+            location.reload()
+          } else {
+            alert('Código incorrecto')
+          }
+        }
+        return
       }
+      
       updateUser(data.user)
       state.profile = profile
       if (profile?.assigned_tier) {

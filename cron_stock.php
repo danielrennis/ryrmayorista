@@ -28,7 +28,7 @@ $netlify_token = 'nfp_d9eXhfEPnDcoKiSdbnKtyt6P2FyLbAZxe3bb';
 $netlify_site_id = '9d65dbc7-828e-4848-9594-ced1bcc2bd94';
 
 // CONFIGURACIÓN SUPABASE (Paso 1)
-$supabase_url = 'PONER_AQUI_TU_URL_DE_SUPABASE'; // Ejemplo: https://xyz.supabase.co
+$supabase_url = 'https://mvbgtzofohhwhhnjqvvg.supabase.co'; 
 $supabase_key = 'sb_publishable_peLMIIKIxRwtnUQrANQP-A_blz7vAth';
 
 $catalog_master = array();

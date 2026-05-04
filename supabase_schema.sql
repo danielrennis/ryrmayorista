@@ -19,6 +19,7 @@ CREATE TABLE profiles (
   phone TEXT NOT NULL,
   address TEXT,
   is_active BOOLEAN DEFAULT FALSE, -- Emanuel debe activarlo localmente primero
+  verification_code TEXT, -- El código que Emanuel le da al cliente
   assigned_tier TEXT DEFAULT 'Mayorista', -- Lista de precios asignada
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
