@@ -25,19 +25,19 @@ const ARS = new Intl.NumberFormat('es-AR', {
 })
 
 const elements = {
-  grid: document.getElementById('main-view-content'),
-  search: document.getElementById('main-search'),
-  cartList: document.getElementById('cart-items-list'),
-  cartSubtotal: document.getElementById('cart-subtotal'),
-  cartTotal: document.getElementById('cart-total'),
-  cartCount: document.getElementById('cart-count-badge'),
-  tierSelect: document.getElementById('tier-select'),
-  btnCheckout: document.getElementById('btn-checkout'),
-  authModal: document.getElementById('auth-modal'),
-  btnLoginTrigger: document.getElementById('btn-login-trigger'),
-  btnLogout: document.getElementById('btn-logout'),
-  userInfo: document.getElementById('user-info'),
-  userEmail: document.getElementById('user-email')
+  get grid() { return document.getElementById('main-view-content') },
+  get search() { return document.getElementById('main-search') },
+  get cartList() { return document.getElementById('cart-items-list') },
+  get cartSubtotal() { return document.getElementById('cart-subtotal') },
+  get cartTotal() { return document.getElementById('cart-total') },
+  get cartCount() { return document.getElementById('cart-count-badge') },
+  get tierSelect() { return document.getElementById('tier-select') },
+  get btnCheckout() { return document.getElementById('btn-checkout') },
+  get authModal() { return document.getElementById('auth-modal') },
+  get btnLoginTrigger() { return document.getElementById('btn-login-trigger') },
+  get btnLogout() { return document.getElementById('btn-logout') },
+  get userInfo() { return document.getElementById('user-info') },
+  get userEmail() { return document.getElementById('user-email') }
 }
 
 // --- CORE LOGIC ---
@@ -49,18 +49,19 @@ async function init() {
     updateUser(session.user)
     if (profile?.assigned_tier) {
       state.tier = profile.assigned_tier
-      elements.tierSelect.value = state.tier
+      if (elements.tierSelect) elements.tierSelect.value = state.tier
     }
+  } else {
+    updateUser(null)
   }
 
   try {
-    // Paso 1: Intentamos cargar desde Supabase (Liviano)
     const { data, error } = await supabase.from('products').select('*')
     if (data && data.length > 0) {
       state.products = data.map(p => ({
         id: p.sku,
         sku: p.sku,
-        name: p.sku, // Placeholder, usually you'd join with local data or keep names in JSON
+        name: p.sku, 
         prices: {
           'Mayorista': p.price_mayorista,
           'Especial Mayorista': p.price_especial,
@@ -70,7 +71,6 @@ async function init() {
         imageUrls: [p.image_url]
       }))
     } else {
-      // Fallback a catalog.json si Supabase está vacío
       const res = await fetch('/catalog.json')
       const json = await res.json()
       state.products = json.products || json
@@ -82,17 +82,18 @@ async function init() {
   state.loading = false
   render()
   setupEventListeners()
+  renderCart()
 }
 
 function updateUser(user) {
   state.user = user
   if (user) {
-    elements.userInfo.classList.remove('hidden')
-    elements.userEmail.textContent = user.email
-    elements.btnLoginTrigger.classList.add('hidden')
+    if (elements.userInfo) elements.userInfo.classList.remove('hidden')
+    if (elements.userEmail) elements.userEmail.textContent = user.email
+    if (elements.btnLoginTrigger) elements.btnLoginTrigger.classList.add('hidden')
   } else {
-    elements.userInfo.classList.add('hidden')
-    elements.btnLoginTrigger.classList.remove('hidden')
+    if (elements.userInfo) elements.userInfo.classList.add('hidden')
+    if (elements.btnLoginTrigger) elements.btnLoginTrigger.classList.remove('hidden')
   }
 }
 
@@ -109,6 +110,8 @@ function renderCatalog() {
     const text = `${p.name} ${p.sku}`.toLowerCase()
     return text.includes(query)
   })
+
+  if (!elements.grid) return
 
   elements.grid.innerHTML = filtered.map(p => {
     const price = p.prices[state.tier] || p.prices['Mayorista'] || 0
@@ -143,24 +146,31 @@ function updateCart() {
 function renderCart() {
   let subtotal = 0
   let count = 0
+  if (!elements.cartList) return
+
   const itemsHtml = Object.entries(state.cart).map(([sku, qty]) => {
     const p = state.products.find(x => x.sku === sku)
     if (!p) return ''
     const price = p.prices[state.tier] || p.prices['Mayorista'] || 0
     subtotal += price * qty
     count += qty
-    return `<div class="bento-card" style="padding: 10px; margin-bottom: 8px; background: var(--surface-brighter); display: flex; justify-content: space-between;">
+    return `<div class="bento-card" style="padding: 10px; margin-bottom: 8px; background: var(--surface-brighter); display: flex; justify-content: space-between; border-radius: 12px;">
       <span style="font-size: 12px;">${qty} x ${sku}</span>
       <span style="font-weight: 800; color: var(--accent);">${ARS.format(price * qty)}</span>
+      <button onclick="window.adjustQty('${sku}', -1)" style="background:none; border:none; color:var(--text-muted); cursor:pointer;">&times;</button>
     </div>`
   }).join('')
+
   elements.cartList.innerHTML = itemsHtml || '<p style="text-align:center; color:var(--text-muted);">Carrito vacío</p>'
-  elements.cartSubtotal.textContent = ARS.format(subtotal)
-  elements.cartTotal.textContent = ARS.format(subtotal)
-  elements.cartCount.textContent = count
+  if (elements.cartSubtotal) elements.cartSubtotal.textContent = ARS.format(subtotal)
+  if (elements.cartTotal) elements.cartTotal.textContent = ARS.format(subtotal)
+  if (elements.cartCount) elements.cartCount.textContent = count
+  
+  createIcons()
 }
 
 async function renderHistory() {
+  if (!elements.grid) return
   if (!state.user) {
     elements.grid.innerHTML = '<p style="text-align:center; grid-column:1/-1; padding:40px;">Iniciá sesión para ver tus pedidos.</p>'
     return
@@ -179,145 +189,99 @@ async function renderHistory() {
 
 // --- EVENT HANDLERS ---
 function setupEventListeners() {
-  // Navigation
-  document.getElementById('show-signup').onclick = () => {
-    document.getElementById('login-section').classList.add('hidden')
-    document.getElementById('signup-section').classList.remove('hidden')
+  if (document.getElementById('show-signup')) {
+    document.getElementById('show-signup').onclick = () => {
+      document.getElementById('login-section').classList.add('hidden')
+      document.getElementById('signup-section').classList.remove('hidden')
+    }
   }
-  document.getElementById('show-login').onclick = () => {
-    document.getElementById('signup-section').classList.add('hidden')
-    document.getElementById('login-section').classList.remove('hidden')
-  }
-
-  // Registration Logic (Paso 2)
-  document.getElementById('btn-do-signup').onclick = async () => {
-    const email = document.getElementById('reg-email').value
-    const pass = document.getElementById('reg-pass').value
-    const name = document.getElementById('reg-name').value
-    const dni = document.getElementById('reg-dni').value
-    const phone = document.getElementById('reg-phone').value
-
-    try {
-      const { data, error } = await supabase.auth.signUp({ email, password: pass })
-      if (error) throw error
-      
-      // Guardamos el perfil pendiente
-      await supabase.from('profiles').insert({
-        id: data.user.id,
-        full_name: name,
-        dni_cuit: dni,
-        phone: phone
-      })
-
-      // Mostramos instrucciones de WhatsApp
+  if (document.getElementById('show-login')) {
+    document.getElementById('show-login').onclick = () => {
       document.getElementById('signup-section').classList.add('hidden')
-      document.getElementById('post-signup-section').classList.remove('hidden')
-      
-      document.getElementById('btn-notify-emanuel').onclick = () => {
-        const text = `Hola Emanuel, me registré en RyR Web.\nMis datos:\nNombre: ${name}\nDNI: ${dni}\nCel: ${phone}\nEmail: ${email}\nPor favor, habilitame las listas de precios.`
-        window.open(`https://wa.me/5493624996333?text=${encodeURIComponent(text)}`, '_blank')
-      }
-
-      document.getElementById('btn-activate-account').onclick = async () => {
-        const code = document.getElementById('activation-code-input').value
-        const { data: profile } = await supabase.from('profiles').select('*').eq('id', data.user.id).single()
-        
-        if (profile && profile.verification_code === code) {
-          await supabase.from('profiles').update({ is_active: true }).eq('id', data.user.id)
-          alert('¡Cuenta activada con éxito! Ya podés ver tus precios.')
-          location.reload()
-        } else {
-          alert('El código ingresado es incorrecto. Por favor verificalo con Emanuel.')
-        }
-      }
-    } catch (e) {
-      alert('Error: ' + e.message)
+      document.getElementById('login-section').classList.remove('hidden')
     }
   }
 
-  document.getElementById('btn-do-login').onclick = async () => {
-    const email = document.getElementById('login-email').value
-    const pass = document.getElementById('login-password').value
-    try {
-      const data = await login(email, pass)
-      const { data: profile } = await supabase.from('profiles').select('*').eq('id', data.user.id).single()
-      
-      if (profile && !profile.is_active) {
-        document.getElementById('login-section').classList.add('hidden')
+  if (document.getElementById('btn-do-signup')) {
+    document.getElementById('btn-do-signup').onclick = async () => {
+      const email = document.getElementById('reg-email').value
+      const pass = document.getElementById('reg-pass').value
+      const name = document.getElementById('reg-name').value
+      const dni = document.getElementById('reg-dni').value
+      const phone = document.getElementById('reg-phone').value
+
+      try {
+        const { data, error } = await supabase.auth.signUp({ email, password: pass })
+        if (error) throw error
+        await supabase.from('profiles').insert({ id: data.user.id, full_name: name, dni_cuit: dni, phone: phone })
+        document.getElementById('signup-section').classList.add('hidden')
         document.getElementById('post-signup-section').classList.remove('hidden')
-        
-        // Re-vincular el botón de activar por si ya tenía cuenta pero no activó
-        document.getElementById('btn-activate-account').onclick = async () => {
-          const code = document.getElementById('activation-code-input').value
-          if (profile.verification_code === code) {
-            await supabase.from('profiles').update({ is_active: true }).eq('id', data.user.id)
-            alert('¡Cuenta activada!')
-            location.reload()
-          } else {
-            alert('Código incorrecto')
-          }
-        }
-        return
+      } catch (e) {
+        alert('Error: ' + e.message)
       }
-      
-      updateUser(data.user)
-      state.profile = profile
-      if (profile?.assigned_tier) {
-        state.tier = profile.assigned_tier
-        elements.tierSelect.value = state.tier
-      }
-      elements.authModal.classList.remove('show')
-      render()
-    } catch (e) {
-      alert('Error: ' + e.message)
     }
   }
 
-  elements.search.oninput = (e) => { state.searchQuery = e.target.value; state.view = 'catalog'; render(); }
-  elements.tierSelect.onchange = (e) => { state.tier = e.target.value; render(); renderCart(); }
-  elements.btnLoginTrigger.onclick = () => elements.authModal.classList.add('show')
-  elements.authModal.onclick = (e) => { if (e.target === elements.authModal) elements.authModal.classList.remove('show') }
+  if (document.getElementById('btn-do-login')) {
+    document.getElementById('btn-do-login').onclick = async () => {
+      const email = document.getElementById('login-email').value
+      const pass = document.getElementById('login-password').value
+      try {
+        const data = await login(email, pass)
+        const { data: profile } = await supabase.from('profiles').select('*').eq('id', data.user.id).single()
+        if (profile && !profile.is_active) {
+          document.getElementById('login-section').classList.add('hidden')
+          document.getElementById('post-signup-section').classList.remove('hidden')
+          return
+        }
+        updateUser(data.user)
+        state.profile = profile
+        if (profile?.assigned_tier) state.tier = profile.assigned_tier
+        elements.authModal.classList.remove('show')
+        render()
+      } catch (e) {
+        alert('Error: ' + e.message)
+      }
+    }
+  }
+
+  if (elements.search) elements.search.oninput = (e) => { state.searchQuery = e.target.value; state.view = 'catalog'; render(); }
+  if (elements.tierSelect) elements.tierSelect.onchange = (e) => { state.tier = e.target.value; render(); renderCart(); }
+  if (elements.btnLoginTrigger) elements.btnLoginTrigger.onclick = () => elements.authModal.classList.add('show')
+  if (elements.authModal) elements.authModal.onclick = (e) => { if (e.target === elements.authModal) elements.authModal.classList.remove('show') }
   
-  document.getElementById('nav-catalog').onclick = (e) => { 
-    e.preventDefault(); state.view = 'catalog'; 
-    document.querySelectorAll('.nav-link').forEach(l => l.classList.remove('active'));
-    document.getElementById('nav-catalog').classList.add('active');
-    render(); 
-  }
-  document.getElementById('nav-history').onclick = (e) => { 
-    e.preventDefault(); state.view = 'history'; 
-    document.querySelectorAll('.nav-link').forEach(l => l.classList.remove('active'));
-    document.getElementById('nav-history').classList.add('active');
-    render(); 
-  }
+  if (document.getElementById('nav-catalog')) document.getElementById('nav-catalog').onclick = (e) => { e.preventDefault(); state.view = 'catalog'; render(); }
+  if (document.getElementById('nav-history')) document.getElementById('nav-history').onclick = (e) => { e.preventDefault(); state.view = 'history'; render(); }
+  if (elements.btnLogout) elements.btnLogout.onclick = async () => { await signOut(); updateUser(null); render(); }
 
-  elements.btnCheckout.onclick = async () => {
-    if (!state.user) return alert('Debés iniciar sesión')
-    if (Object.keys(state.cart).length === 0) return alert('Carrito vacío')
-    
-    const total = Object.entries(state.cart).reduce((s, [sku, q]) => {
-      const p = state.products.find(x => x.sku === sku)
-      return s + ((p?.prices[state.tier] || 0) * q)
-    }, 0)
-
-    const { data: order, error } = await supabase.from('orders').insert({
-      user_id: state.user.id,
-      total,
-      items: state.cart
-    }).select().single()
-
-    if (error) return alert('Error al guardar: ' + error.message)
-
-    alert('Pedido guardado! Se abre WhatsApp para avisar a Emanuel.')
-    window.open(`https://wa.me/5493624996333?text=Hola%20Emanuel,%20confirmé%20el%20pedido%20%23${order.id.slice(0,8)}`, '_blank')
-    state.cart = {}
-    updateCart()
-    render()
+  if (elements.btnCheckout) {
+    elements.btnCheckout.onclick = async () => {
+      if (!state.user) return alert('Debés iniciar sesión')
+      if (Object.keys(state.cart).length === 0) return alert('Carrito vacío')
+      const total = Object.entries(state.cart).reduce((s, [sku, q]) => {
+        const p = state.products.find(x => x.sku === sku)
+        return s + ((p?.prices[state.tier] || 0) * q)
+      }, 0)
+      const { data: order, error } = await supabase.from('orders').insert({ user_id: state.user.id, total, items: state.cart }).select().single()
+      if (error) return alert('Error al guardar: ' + error.message)
+      alert('Pedido guardado!')
+      state.cart = {}
+      updateCart()
+      render()
+    }
   }
 }
 
 window.addToCart = (sku) => {
   state.cart[sku] = (state.cart[sku] || 0) + 1
+  updateCart()
+  render()
+}
+
+window.adjustQty = (sku, delta) => {
+  const current = state.cart[sku] || 0
+  if (current + delta <= 0) delete state.cart[sku]
+  else state.cart[sku] = current + delta
   updateCart()
   render()
 }

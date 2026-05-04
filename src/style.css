@@ -38,7 +38,7 @@ body {
   display: grid;
   grid-template-columns: 280px 1fr 320px;
   gap: 20px;
-  height: 100vh;
+  min-height: 100vh;
 }
 
 @media (max-width: 1200px) {
@@ -254,6 +254,10 @@ body {
   border-radius: var(--radius-sm);
   font-weight: 600;
   cursor: pointer;
+}
+
+.hidden {
+  display: none !important;
 }
 
 /* --- ANIMATIONS --- */
