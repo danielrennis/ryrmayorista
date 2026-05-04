@@ -64,15 +64,21 @@
                     </div>
                 </div>
                 
-                <div id="main-view-content" class="product-grid">
-                    <!-- Products or History injected by JS -->
-                    <div style="grid-column: 1/-1; text-align: center; padding: 100px;">
-                        <div class="spinner"></div>
-                        <p style="color: var(--text-muted);">Cargando catálogo premium...</p>
-                    </div>
+            <div id="main-view-content" class="product-grid">
+                    <!-- Products injected by JS -->
                 </div>
             </section>
         </main>
+
+        <!-- Mobile Nav -->
+        <nav class="mobile-nav hidden" id="mobile-nav">
+            <button class="btn-ghost" onclick="window.setView('catalog')"><i data-lucide="layout-grid"></i></button>
+            <button class="btn-ghost" onclick="window.setView('history')"><i data-lucide="clock"></i></button>
+            <button class="btn-primary" onclick="window.toggleCart()" style="border-radius: 50px;">
+                <i data-lucide="shopping-cart"></i> <span id="mob-cart-count">0</span>
+            </button>
+            <button class="btn-ghost" onclick="window.toggleAuth()"><i data-lucide="user"></i></button>
+        </nav>
 
         <!-- Cart / Summary Sidebar -->
         <aside class="cart-aside bento-card" style="display: flex; flex-direction: column; gap: 20px;">

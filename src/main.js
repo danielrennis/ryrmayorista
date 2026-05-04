@@ -1,10 +1,10 @@
 import { login, signUp, signOut, getSession } from './auth'
-import { createIcons, LayoutGrid, Clock, User, Search, Send, Mail, Lock, Plus, Minus, Trash2, LogOut, CheckCircle } from 'lucide'
+import { createIcons, LayoutGrid, Clock, User, Search, Send, Mail, Lock, Plus, Minus, Trash2, LogOut, CheckCircle, ShoppingCart } from 'lucide'
 import { supabase } from './supabase'
 
 // --- INITIALIZATION ---
 createIcons({
-  icons: { LayoutGrid, Clock, User, Search, Send, Mail, Lock, Plus, Minus, Trash2, LogOut, CheckCircle }
+  icons: { LayoutGrid, Clock, User, Search, Send, Mail, Lock, Plus, Minus, Trash2, LogOut, CheckCircle, ShoppingCart }
 })
 
 const state = {
@@ -83,6 +83,11 @@ async function init() {
   render()
   setupEventListeners()
   renderCart()
+
+  // Mobile Nav Toggle
+  if (window.innerWidth < 1000) {
+    document.getElementById('mobile-nav')?.classList.remove('hidden')
+  }
 }
 
 function updateUser(user) {
@@ -165,8 +170,31 @@ function renderCart() {
   if (elements.cartSubtotal) elements.cartSubtotal.textContent = ARS.format(subtotal)
   if (elements.cartTotal) elements.cartTotal.textContent = ARS.format(subtotal)
   if (elements.cartCount) elements.cartCount.textContent = count
+  if (document.getElementById('mob-cart-count')) document.getElementById('mob-cart-count').textContent = count
   
   createIcons()
+}
+
+// --- MOBILE HELPERS ---
+window.toggleCart = () => {
+  const cart = document.querySelector('.cart-aside')
+  cart.classList.toggle('show-mobile') // Add this to CSS or handle inline
+  if (cart.style.display === 'flex') cart.style.display = 'none'
+  else cart.style.display = 'flex'
+}
+
+window.setView = (view) => {
+  state.view = view
+  render()
+}
+
+window.toggleAuth = () => {
+  if (state.user) {
+    state.view = 'profile'
+    render()
+  } else {
+    elements.authModal.classList.add('show')
+  }
 }
 
 async function renderHistory() {
