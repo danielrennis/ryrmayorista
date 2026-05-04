@@ -49,7 +49,8 @@ async function init() {
   }
 
   try {
-    const { data } = await supabase.from('products').select('*')
+    // Traemos ordenado por fecha de actualización (descendente)
+    const { data } = await supabase.from('products').select('*').order('updated_at', { ascending: false })
     if (data && data.length > 0) {
       state.products = data.map(p => ({
         id: p.sku,

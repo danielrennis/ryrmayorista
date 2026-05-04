@@ -129,7 +129,8 @@ foreach ($products_array as $p) {
         "price_especial" => (float)$p['prices']['Especial Mayorista'],
         "price_super" => (float)$p['prices']['Super Especial'],
         "price_distribuidor" => (float)$p['prices']['Distribuidor'],
-        "image_url" => $p['imageUrls'][0]
+        "image_url" => $p['imageUrls'][0],
+        "updated_at" => date('c') // Fecha actual para el ordenamiento
     );
 }
 
