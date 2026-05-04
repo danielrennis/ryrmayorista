@@ -61,12 +61,16 @@ async function init() {
           'Súper Especial': p.price_super,
           'Distribuidor': p.price_distribuidor
         },
-        image_url: p.image_url
+        img: p.image_url // Normalizado a 'img'
       }))
     } else {
       const res = await fetch('/catalog.json')
       const json = await res.json()
-      state.products = json.products || json
+      const raw = json.products || json
+      state.products = raw.map(p => ({
+        ...p,
+        img: (p.imageUrls && p.imageUrls[0]) || '/logo.png' // Normalizado a 'img'
+      }))
     }
   } catch (e) {
     console.error('Failed load', e)
@@ -104,11 +108,11 @@ function render() {
 
   els.grid.innerHTML = filtered.map(p => {
     const price = p.prices[state.tier] || p.prices['Mayorista'] || 0
-    const img = p.image_url || '/logo.png'
+    const imagePath = p.img || '/logo.png'
     const qty = state.cart[p.sku] || 0
     return `
       <div class="card">
-        <div class="img"><img src="${img}" onerror="this.src='/logo.png'"></div>
+        <div class="img"><img src="${imagePath}" onerror="this.src='/logo.png'"></div>
         <div class="body">
           <div class="name">${p.name}</div>
           <div class="price">${ARS.format(price)}</div>
