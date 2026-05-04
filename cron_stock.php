@@ -24,9 +24,12 @@ $sucursales_config = array(
     'Formosa'    => 'serverfor.dyndns.org'
 );
 
-// CONFIGURACIÓN DE DESPLIEGUE (Netlify)
 $netlify_token = 'nfp_d9eXhfEPnDcoKiSdbnKtyt6P2FyLbAZxe3bb';
 $netlify_site_id = '9d65dbc7-828e-4848-9594-ced1bcc2bd94';
+
+// CONFIGURACIÓN SUPABASE (Paso 1)
+$supabase_url = 'PONER_AQUI_TU_URL_DE_SUPABASE'; // Ejemplo: https://xyz.supabase.co
+$supabase_key = 'sb_publishable_peLMIIKIxRwtnUQrANQP-A_blz7vAth';
 
 $catalog_master = array();
 
@@ -114,8 +117,45 @@ usort($products_array, function($a, $b) {
 $output = array("products" => $products_array);
 $json_data = json_encode($output, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT);
 file_put_contents(__DIR__ . '/catalog.json', $json_data);
-
 echo "JSON generado en: " . __DIR__ . PHP_EOL;
+
+// --- SINCRONIZACIÓN CON SUPABASE (Paso 1) ---
+echo "Sincronizando productos livianos con Supabase..." . PHP_EOL;
+$supabase_items = array();
+foreach ($products_array as $p) {
+    $supabase_items[] = array(
+        "sku" => $p['sku'],
+        "price_mayorista" => (float)$p['prices']['Mayorista'],
+        "price_especial" => (float)$p['prices']['Especial Mayorista'],
+        "price_super" => (float)$p['prices']['Super Especial'],
+        "price_distribuidor" => (float)$p['prices']['Distribuidor'],
+        "image_url" => $p['imageUrls'][0]
+    );
+}
+
+// Subimos de a 100 para no saturar
+$chunks = array_chunk($supabase_items, 100);
+foreach ($chunks as $chunk) {
+    $ch = curl_init($supabase_url . "/rest/v1/products");
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_POST, true);
+    curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($chunk));
+    curl_setopt($ch, CURLOPT_HTTPHEADER, array(
+        'apikey: ' . $supabase_key,
+        'Authorization: Bearer ' . $supabase_key,
+        'Content-Type: application/json',
+        'Prefer: resolution=merge-duplicates' // Esto hace el UPSERT (actualiza si existe, inserta si no)
+    ));
+    $response = curl_exec($ch);
+    $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+    if ($httpCode >= 200 && $httpCode < 300) {
+        echo ".";
+    } else {
+        echo "E($httpCode)";
+    }
+}
+echo PHP_EOL . "Sincronización Supabase finalizada." . PHP_EOL;
 
 echo "Preparando archivos para despliegue (filtrando el backup y código fuente)..." . PHP_EOL;
 $distDir = __DIR__ . '/dist';

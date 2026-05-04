@@ -1,16 +1,19 @@
 import { login, signUp, signOut, getSession } from './auth'
+import { createIcons, LayoutGrid, Clock, User, Search, Send, Mail, Lock, Plus, Minus, Trash2, LogOut, CheckCircle } from 'lucide'
+import { supabase } from './supabase'
 
 // --- INITIALIZATION ---
 createIcons({
-  icons: { LayoutGrid, Clock, User, Search, Send, Mail, Lock, Plus, Minus, Trash2, LogOut, Search }
+  icons: { LayoutGrid, Clock, User, Search, Send, Mail, Lock, Plus, Minus, Trash2, LogOut, CheckCircle }
 })
 
 const state = {
   products: [],
   cart: JSON.parse(localStorage.getItem('ryr_cart') || '{}'),
-  view: 'catalog', // 'catalog', 'history', 'profile'
+  view: 'catalog',
   user: null,
-  tier: 'Especial Mayorista',
+  profile: null,
+  tier: 'Mayorista',
   searchQuery: '',
   loading: true
 }
@@ -21,7 +24,6 @@ const ARS = new Intl.NumberFormat('es-AR', {
   minimumFractionDigits: 0
 })
 
-// --- UI ELEMENTS ---
 const elements = {
   grid: document.getElementById('main-view-content'),
   search: document.getElementById('main-search'),
@@ -40,18 +42,35 @@ const elements = {
 
 // --- CORE LOGIC ---
 async function init() {
-  // Check session
-  const { data: { session } } = await supabase.auth.getSession()
-  updateUser(session?.user || null)
+  const session = await getSession()
+  if (session) {
+    const { data: profile } = await supabase.from('profiles').select('*').eq('id', session.user.id).single()
+    state.profile = profile
+    updateUser(session.user)
+    if (profile?.assigned_tier) {
+      state.tier = profile.assigned_tier
+      elements.tierSelect.value = state.tier
+    }
+  }
 
-  // Load products
   try {
-    // Try Supabase first
+    // Paso 1: Intentamos cargar desde Supabase (Liviano)
     const { data, error } = await supabase.from('products').select('*')
     if (data && data.length > 0) {
-      state.products = data
+      state.products = data.map(p => ({
+        id: p.sku,
+        sku: p.sku,
+        name: p.sku, // Placeholder, usually you'd join with local data or keep names in JSON
+        prices: {
+          'Mayorista': p.price_mayorista,
+          'Especial Mayorista': p.price_especial,
+          'Súper Especial': p.price_super,
+          'Distribuidor': p.price_distribuidor
+        },
+        imageUrls: [p.image_url]
+      }))
     } else {
-      // Fallback to local JSON
+      // Fallback a catalog.json si Supabase está vacío
       const res = await fetch('/catalog.json')
       const json = await res.json()
       state.products = json.products || json
@@ -77,10 +96,43 @@ function updateUser(user) {
   }
 }
 
-function getPrice(p, tier) {
-  if (!p.prices) return 0
-  const price = p.prices[tier] || p.prices['Mayorista'] || 0
-  return parseFloat(price)
+// --- RENDERING ---
+function render() {
+  if (state.loading) return
+  if (state.view === 'catalog') renderCatalog()
+  else if (state.view === 'history') renderHistory()
+}
+
+function renderCatalog() {
+  const query = state.searchQuery.toLowerCase()
+  const filtered = state.products.filter(p => {
+    const text = `${p.name} ${p.sku}`.toLowerCase()
+    return text.includes(query)
+  })
+
+  elements.grid.innerHTML = filtered.map(p => {
+    const price = p.prices[state.tier] || p.prices['Mayorista'] || 0
+    const img = (p.imageUrls && p.imageUrls[0]) || '/logo.png'
+    const qty = state.cart[p.sku] || 0
+
+    return `
+      <div class="product-card animate-in">
+        <div class="product-image">
+          <img src="${img}" alt="${p.sku}" onerror="this.src='/logo.png'">
+        </div>
+        <div class="product-info">
+          <h3 style="font-size: 13px;">${p.name}</h3>
+          <p style="font-size: 11px; color: var(--text-muted); margin: 4px 0;">SKU: ${p.sku}</p>
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 8px;">
+            <span class="product-price">${ARS.format(price)}</span>
+            <button class="btn-primary" style="padding: 8px 16px; font-size: 12px;" onclick="window.addToCart('${p.sku}')">
+              ${qty > 0 ? `(${qty}) +` : 'AGREGAR'}
+            </button>
+          </div>
+        </div>
+      </div>
+    `
+  }).join('')
 }
 
 function updateCart() {
@@ -88,282 +140,158 @@ function updateCart() {
   renderCart()
 }
 
-function addToCart(id) {
-  state.cart[id] = (state.cart[id] || 0) + 1
-  updateCart()
-}
-
-function setQty(id, qty) {
-  if (qty <= 0) delete state.cart[id]
-  else state.cart[id] = qty
-  updateCart()
-}
-
-// --- RENDERING ---
-function render() {
-  if (state.loading) return
-
-  if (state.view === 'catalog') {
-    renderCatalog()
-  } else if (state.view === 'history') {
-    renderHistory()
-  }
-}
-
-function renderCatalog() {
-  const query = state.searchQuery.toLowerCase()
-  const filtered = state.products.filter(p => {
-    const text = `${p.name} ${p.brand} ${p.sku}`.toLowerCase()
-    return text.includes(query)
-  })
-
-  elements.grid.innerHTML = filtered.map(p => {
-    const price = getPrice(p, state.tier)
-    const img = (p.imageUrls && p.imageUrls[0]) || '/logo.png'
-    const qty = state.cart[p.id] || 0
-
-    return `
-      <div class="product-card animate-in">
-        <div class="product-image">
-          <img src="${img}" alt="${p.name}" onerror="this.src='/logo.png'">
-        </div>
-        <div class="product-info">
-          <h3>${p.name}</h3>
-          <p style="font-size: 11px; color: var(--text-muted); margin: 4px 0;">${p.brand || 'S/M'} • SKU: ${p.sku}</p>
-          <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 8px;">
-            <span class="product-price">${ARS.format(price)}</span>
-            ${qty > 0 ? `
-              <div style="display: flex; align-items: center; gap: 8px; background: var(--surface); padding: 4px; border-radius: 12px;">
-                <button class="qty-btn" onclick="window.adjustQty('${p.id}', -1)"><i data-lucide="minus" style="width: 14px;"></i></button>
-                <span style="font-weight: 800; font-size: 14px;">${qty}</span>
-                <button class="qty-btn" onclick="window.adjustQty('${p.id}', 1)"><i data-lucide="plus" style="width: 14px;"></i></button>
-              </div>
-            ` : `
-              <button class="btn-primary" style="padding: 8px 16px; font-size: 12px;" onclick="window.addToCart('${p.id}')">AGREGAR</button>
-            `}
-          </div>
-        </div>
-      </div>
-    `
-  }).join('')
-  
-  createIcons() // Re-init icons for dynamic content
-}
-
 function renderCart() {
   let subtotal = 0
   let count = 0
-
-  const itemsHtml = Object.entries(state.cart).map(([id, qty]) => {
-    const p = state.products.find(x => String(x.id) === String(id))
+  const itemsHtml = Object.entries(state.cart).map(([sku, qty]) => {
+    const p = state.products.find(x => x.sku === sku)
     if (!p) return ''
-    const price = getPrice(p, state.tier)
+    const price = p.prices[state.tier] || p.prices['Mayorista'] || 0
     subtotal += price * qty
     count += qty
-
-    return `
-      <div class="bento-card" style="padding: 12px; display: flex; gap: 12px; background: var(--surface-brighter);">
-        <img src="${p.imageUrls?.[0] || '/logo.png'}" style="width: 50px; height: 50px; object-fit: contain; background: white; border-radius: 8px;">
-        <div style="flex: 1;">
-          <h4 style="margin: 0; font-size: 12px; font-weight: 600;">${p.name}</h4>
-          <p style="margin: 4px 0 0 0; color: var(--accent); font-weight: 800; font-size: 13px;">${qty} x ${ARS.format(price)}</p>
-        </div>
-        <button onclick="window.adjustQty('${id}', -999)" style="background: transparent; border: none; color: var(--text-muted); cursor: pointer;">
-          <i data-lucide="trash-2" style="width: 16px;"></i>
-        </button>
-      </div>
-    `
+    return `<div class="bento-card" style="padding: 10px; margin-bottom: 8px; background: var(--surface-brighter); display: flex; justify-content: space-between;">
+      <span style="font-size: 12px;">${qty} x ${sku}</span>
+      <span style="font-weight: 800; color: var(--accent);">${ARS.format(price * qty)}</span>
+    </div>`
   }).join('')
-
-  elements.cartList.innerHTML = itemsHtml || '<p style="text-align: center; color: var(--text-muted); padding: 40px;">Tu carrito está vacío</p>'
+  elements.cartList.innerHTML = itemsHtml || '<p style="text-align:center; color:var(--text-muted);">Carrito vacío</p>'
   elements.cartSubtotal.textContent = ARS.format(subtotal)
-  elements.cartTotal.textContent = ARS.format(subtotal) // Shipping logic can be added here
+  elements.cartTotal.textContent = ARS.format(subtotal)
   elements.cartCount.textContent = count
-  
-  createIcons()
 }
 
 async function renderHistory() {
   if (!state.user) {
-    elements.grid.innerHTML = `
-      <div style="grid-column: 1/-1; text-align: center; padding: 60px;">
-        <i data-lucide="lock" style="width: 48px; height: 48px; color: var(--text-muted); margin-bottom: 20px;"></i>
-        <h3>Debes iniciar sesión</h3>
-        <p style="color: var(--text-muted);">Para ver tu historial de pedidos, por favor ingresa a tu cuenta.</p>
-        <button class="btn-primary" style="margin-top: 20px;" onclick="document.getElementById('auth-modal').classList.add('show')">INGRESAR</button>
-      </div>
-    `
-    createIcons()
+    elements.grid.innerHTML = '<p style="text-align:center; grid-column:1/-1; padding:40px;">Iniciá sesión para ver tus pedidos.</p>'
     return
   }
-
-  elements.grid.innerHTML = '<div style="grid-column: 1/-1; text-align: center; padding: 100px;"><div class="spinner"></div><p>Cargando historial...</p></div>'
-
-  const { data: orders, error } = await supabase
-    .from('orders')
-    .select('*, order_items(*)')
-    .order('created_at', { ascending: false })
-
-  if (error) {
-    elements.grid.innerHTML = `<p style="color: red; text-align: center; grid-column: 1/-1;">Error: ${error.message}</p>`
-    return
-  }
-
-  if (!orders || orders.length === 0) {
-    elements.grid.innerHTML = '<p style="text-align: center; color: var(--text-muted); grid-column: 1/-1; padding: 100px;">Aún no tienes pedidos realizados.</p>'
-    return
-  }
-
-  elements.grid.innerHTML = orders.map(order => `
-    <div class="bento-card animate-in" style="grid-column: 1/-1; background: var(--surface-brighter);">
-      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
-        <div>
-          <span style="font-weight: 800; font-size: 18px;">Pedido #${order.id.slice(0, 8)}</span>
-          <p style="margin: 4px 0 0 0; color: var(--text-muted); font-size: 13px;">${new Date(order.created_at).toLocaleDateString()} ${new Date(order.created_at).toLocaleTimeString()}</p>
-        </div>
-        <span style="background: var(--accent); color: white; padding: 4px 12px; border-radius: 8px; font-size: 12px; font-weight: 800;">${order.status.toUpperCase()}</span>
+  const { data: orders } = await supabase.from('orders').select('*').eq('user_id', state.user.id).order('created_at', { ascending: false })
+  elements.grid.innerHTML = (orders || []).map(o => `
+    <div class="bento-card" style="grid-column: 1/-1; margin-bottom: 12px;">
+      <div style="display:flex; justify-content:space-between; font-weight:800;">
+        <span>Pedido #${o.id.slice(0,8)}</span>
+        <span>${ARS.format(o.total)}</span>
       </div>
-      <div style="display: flex; flex-direction: column; gap: 8px;">
-        ${order.order_items.map(item => `
-          <div style="display: flex; justify-content: space-between; font-size: 14px;">
-            <span>${item.quantity} x Producto ID: ${item.product_id}</span>
-            <span style="font-weight: 600;">${ARS.format(item.price_at_time * item.quantity)}</span>
-          </div>
-        `).join('')}
-      </div>
-      <div style="margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center;">
-        <span style="font-weight: 800;">Total</span>
-        <span style="font-weight: 900; font-size: 20px; color: var(--accent);">${ARS.format(order.total)}</span>
-      </div>
+      <div style="font-size:12px; color:var(--text-muted);">${new Date(o.created_at).toLocaleString()}</div>
     </div>
   `).join('')
-  
-  createIcons()
 }
 
-// --- EVENTS ---
+// --- EVENT HANDLERS ---
 function setupEventListeners() {
-  elements.search.addEventListener('input', (e) => {
-    state.searchQuery = e.target.value
-    state.view = 'catalog'
-    render()
-  })
+  // Navigation
+  document.getElementById('show-signup').onclick = () => {
+    document.getElementById('login-section').classList.add('hidden')
+    document.getElementById('signup-section').classList.remove('hidden')
+  }
+  document.getElementById('show-login').onclick = () => {
+    document.getElementById('signup-section').classList.add('hidden')
+    document.getElementById('login-section').classList.remove('hidden')
+  }
 
-  elements.tierSelect.addEventListener('change', (e) => {
-    state.tier = e.target.value
-    render()
-    renderCart()
-  })
+  // Registration Logic (Paso 2)
+  document.getElementById('btn-do-signup').onclick = async () => {
+    const email = document.getElementById('reg-email').value
+    const pass = document.getElementById('reg-pass').value
+    const name = document.getElementById('reg-name').value
+    const dni = document.getElementById('reg-dni').value
+    const phone = document.getElementById('reg-phone').value
 
-  elements.btnLoginTrigger.addEventListener('click', () => {
-    elements.authModal.classList.add('show')
-  })
-
-  elements.authModal.addEventListener('click', (e) => {
-    if (e.target === elements.authModal) elements.authModal.classList.remove('show')
-  })
-
-  document.getElementById('btn-login').addEventListener('click', async () => {
-    const email = document.getElementById('auth-email').value
-    const password = document.getElementById('auth-password').value
     try {
-      const data = await login(email, password)
+      const { data, error } = await supabase.auth.signUp({ email, password: pass })
+      if (error) throw error
+      
+      // Guardamos el perfil pendiente
+      await supabase.from('profiles').insert({
+        id: data.user.id,
+        full_name: name,
+        dni_cuit: dni,
+        phone: phone
+      })
+
+      // Mostramos instrucciones de WhatsApp
+      document.getElementById('signup-section').classList.add('hidden')
+      document.getElementById('post-signup-section').classList.remove('hidden')
+      
+      document.getElementById('btn-notify-emanuel').onclick = () => {
+        const text = `Hola Emanuel, me registré en RyR Web.\nMis datos:\nNombre: ${name}\nDNI: ${dni}\nCel: ${phone}\nEmail: ${email}\nPor favor, habilitame las listas de precios.`
+        window.open(`https://wa.me/5493624996333?text=${encodeURIComponent(text)}`, '_blank')
+      }
+    } catch (e) {
+      alert('Error: ' + e.message)
+    }
+  }
+
+  // Login Logic
+  document.getElementById('btn-do-login').onclick = async () => {
+    const email = document.getElementById('login-email').value
+    const pass = document.getElementById('login-password').value
+    try {
+      const data = await login(email, pass)
+      const { data: profile } = await supabase.from('profiles').select('*').eq('id', data.user.id).single()
+      if (profile && !profile.is_active) {
+        alert('Tu cuenta está pendiente de activación por Emanuel.')
+      }
       updateUser(data.user)
+      state.profile = profile
+      if (profile?.assigned_tier) {
+        state.tier = profile.assigned_tier
+        elements.tierSelect.value = state.tier
+      }
       elements.authModal.classList.remove('show')
       render()
     } catch (e) {
-      alert('Error de ingreso: ' + e.message)
+      alert('Error: ' + e.message)
     }
-  })
+  }
 
-  document.getElementById('nav-catalog').addEventListener('click', (e) => {
-    e.preventDefault()
-    state.view = 'catalog'
-    document.querySelectorAll('.nav-link').forEach(l => l.classList.remove('active'))
-    e.target.closest('.nav-link').classList.add('active')
-    document.getElementById('view-title').textContent = 'Catálogo'
-    render()
-  })
+  elements.search.oninput = (e) => { state.searchQuery = e.target.value; state.view = 'catalog'; render(); }
+  elements.tierSelect.onchange = (e) => { state.tier = e.target.value; render(); renderCart(); }
+  elements.btnLoginTrigger.onclick = () => elements.authModal.classList.add('show')
+  elements.authModal.onclick = (e) => { if (e.target === elements.authModal) elements.authModal.classList.remove('show') }
+  
+  document.getElementById('nav-catalog').onclick = (e) => { 
+    e.preventDefault(); state.view = 'catalog'; 
+    document.querySelectorAll('.nav-link').forEach(l => l.classList.remove('active'));
+    document.getElementById('nav-catalog').classList.add('active');
+    render(); 
+  }
+  document.getElementById('nav-history').onclick = (e) => { 
+    e.preventDefault(); state.view = 'history'; 
+    document.querySelectorAll('.nav-link').forEach(l => l.classList.remove('active'));
+    document.getElementById('nav-history').classList.add('active');
+    render(); 
+  }
 
-  document.getElementById('nav-history').addEventListener('click', (e) => {
-    e.preventDefault()
-    state.view = 'history'
-    document.querySelectorAll('.nav-link').forEach(l => l.classList.remove('active'))
-    e.target.closest('.nav-link').classList.add('active')
-    document.getElementById('view-title').textContent = 'Historial de Pedidos'
-    render()
-  })
-
-  elements.userInfo.querySelector('#btn-logout').addEventListener('click', async () => {
-    await signOut()
-    updateUser(null)
-    state.view = 'catalog'
-    render()
-  })
-
-  elements.btnCheckout.addEventListener('click', async () => {
-    if (Object.keys(state.cart).length === 0) return alert('El carrito está vacío')
+  elements.btnCheckout.onclick = async () => {
+    if (!state.user) return alert('Debés iniciar sesión')
+    if (Object.keys(state.cart).length === 0) return alert('Carrito vacío')
     
-    if (!state.user) {
-      alert('Debes iniciar sesión para confirmar el pedido.')
-      elements.authModal.classList.add('show')
-      return
-    }
+    const total = Object.entries(state.cart).reduce((s, [sku, q]) => {
+      const p = state.products.find(x => x.sku === sku)
+      return s + ((p?.prices[state.tier] || 0) * q)
+    }, 0)
 
-    try {
-      const total = Object.entries(state.cart).reduce((sum, [id, qty]) => {
-        const p = state.products.find(x => String(x.id) === String(id))
-        return sum + (getPrice(p, state.tier) * qty)
-      }, 0)
+    const { data: order, error } = await supabase.from('orders').insert({
+      user_id: state.user.id,
+      total,
+      items: state.cart
+    }).select().single()
 
-      // Create Order in Supabase
-      const { data: order, error: orderErr } = await supabase
-        .from('orders')
-        .insert({
-          user_id: state.user.id,
-          total,
-          status: 'pending',
-          client_data: { tier: state.tier }
-        })
-        .select()
-        .single()
+    if (error) return alert('Error al guardar: ' + error.message)
 
-      if (orderErr) throw orderErr
-
-      // Create Order Items
-      const items = Object.entries(state.cart).map(([id, qty]) => {
-        const p = state.products.find(x => String(x.id) === String(id))
-        return {
-          order_id: order.id,
-          product_id: String(id),
-          quantity: qty,
-          price_at_time: getPrice(p, state.tier)
-        }
-      })
-
-      const { error: itemsErr } = await supabase.from('order_items').insert(items)
-      if (itemsErr) throw itemsErr
-
-      alert('¡Pedido realizado con éxito! Redirigiendo a WhatsApp para confirmación final.')
-      
-      // WhatsApp Text Logic...
-      const waText = `*PEDIDO WEB #${order.id.slice(0, 8)}*\nTotal: ${ARS.format(total)}\n\nDetalles en el sistema.`
-      window.open(`https://wa.me/5493624996333?text=${encodeURIComponent(waText)}`, '_blank')
-      
-      state.cart = {}
-      updateCart()
-      render()
-    } catch (e) {
-      alert('Error al procesar pedido: ' + e.message)
-    }
-  })
+    alert('Pedido guardado! Se abre WhatsApp para avisar a Emanuel.')
+    window.open(`https://wa.me/5493624996333?text=Hola%20Emanuel,%20confirmé%20el%20pedido%20%23${order.id.slice(0,8)}`, '_blank')
+    state.cart = {}
+    updateCart()
+    render()
+  }
 }
 
-// --- GLOBAL EXPOSE ---
-window.addToCart = addToCart
-window.adjustQty = (id, delta) => {
-  const current = state.cart[id] || 0
-  setQty(id, current + delta)
+window.addToCart = (sku) => {
+  state.cart[sku] = (state.cart[sku] || 0) + 1
+  updateCart()
+  render()
 }
 
 init()

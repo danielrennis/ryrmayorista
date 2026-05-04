@@ -108,23 +108,66 @@
         <!-- Auth Modal -->
         <div id="auth-modal" class="modal-overlay">
             <div class="auth-card">
-                <div id="login-form">
-                    <h2>Bienvenido</h2>
-                    <p style="color: var(--text-muted); margin-bottom: 24px;">Ingresa para ver tu historial y guardar tus pedidos.</p>
-                    
-                    <div style="display: flex; flex-direction: column; gap: 16px;">
-                        <div class="search-tile" style="height: 50px;">
-                            <i data-lucide="mail" style="width: 18px;"></i>
-                            <input type="email" id="auth-email" placeholder="Correo electrónico">
+                <div id="auth-forms">
+                    <!-- Login Form -->
+                    <div id="login-section">
+                        <h2>Bienvenido</h2>
+                        <p style="color: var(--text-muted); margin-bottom: 24px;">Ingresa para ver tu historial y pedidos.</p>
+                        <div style="display: flex; flex-direction: column; gap: 16px;">
+                            <div class="search-tile" style="height: 50px;">
+                                <i data-lucide="mail" style="width: 18px;"></i>
+                                <input type="email" id="login-email" placeholder="Correo electrónico">
+                            </div>
+                            <div class="search-tile" style="height: 50px;">
+                                <i data-lucide="lock" style="width: 18px;"></i>
+                                <input type="password" id="login-password" placeholder="Contraseña">
+                            </div>
+                            <button class="btn-primary" id="btn-do-login">Iniciar Sesión</button>
+                            <p style="text-align: center; font-size: 13px; color: var(--text-muted);">
+                                ¿No tienes cuenta? <a href="#" id="show-signup" style="color: var(--accent); text-decoration: none; font-weight: 600;">Regístrate aquí</a>
+                            </p>
                         </div>
-                        <div class="search-tile" style="height: 50px;">
-                            <i data-lucide="lock" style="width: 18px;"></i>
-                            <input type="password" id="auth-password" placeholder="Contraseña">
+                    </div>
+
+                    <!-- Signup Form -->
+                    <div id="signup-section" class="hidden">
+                        <h2>Crear Cuenta</h2>
+                        <p style="color: var(--text-muted); margin-bottom: 24px;">Completá tus datos para que Emanuel te habilite.</p>
+                        <div style="display: flex; flex-direction: column; gap: 12px;">
+                            <div class="search-tile" style="height: 44px;">
+                                <input type="text" id="reg-name" placeholder="Nombre y Apellido">
+                            </div>
+                            <div class="search-tile" style="height: 44px;">
+                                <input type="text" id="reg-dni" placeholder="DNI / CUIT">
+                            </div>
+                            <div class="search-tile" style="height: 44px;">
+                                <input type="text" id="reg-phone" placeholder="Celular (ej: 3624...)">
+                            </div>
+                            <div class="search-tile" style="height: 44px;">
+                                <input type="email" id="reg-email" placeholder="Email">
+                            </div>
+                            <div class="search-tile" style="height: 44px;">
+                                <input type="password" id="reg-pass" placeholder="Contraseña">
+                            </div>
+                            <button class="btn-primary" id="btn-do-signup">Registrarme</button>
+                            <p style="text-align: center; font-size: 13px; color: var(--text-muted);">
+                                ¿Ya tenés cuenta? <a href="#" id="show-login" style="color: var(--accent); text-decoration: none; font-weight: 600;">Iniciá sesión</a>
+                            </p>
                         </div>
-                        <button class="btn-primary" id="btn-login" style="margin-top: 10px;">Iniciar Sesión</button>
-                        <p style="text-align: center; font-size: 13px; color: var(--text-muted);">
-                            ¿No tienes cuenta? <a href="#" id="toggle-auth" style="color: var(--accent); text-decoration: none; font-weight: 600;">Regístrate</a>
+                    </div>
+
+                    <!-- Post-Signup Instructions -->
+                    <div id="post-signup-section" class="hidden" style="text-align: center;">
+                        <div style="background: var(--accent-glow); padding: 20px; border-radius: 20px; margin-bottom: 20px;">
+                            <i data-lucide="check-circle" style="width: 48px; height: 48px; color: var(--accent); margin-bottom: 12px;"></i>
+                            <h3 style="margin: 0;">¡Registro casi listo!</h3>
+                        </div>
+                        <p style="font-size: 14px; color: var(--text-muted); margin-bottom: 24px;">
+                            Para activar tu cuenta y ver tus precios mayoristas, enviá tus datos a Emanuel por WhatsApp.
                         </p>
+                        <button class="btn-primary" id="btn-notify-emanuel" style="width: 100%; background: #25D366; box-shadow: 0 4px 15px rgba(37, 211, 102, 0.3);">
+                            <i data-lucide="send"></i> NOTIFICAR A EMANUEL
+                        </button>
                     </div>
                 </div>
             </div>
