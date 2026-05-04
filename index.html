@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RyR Mayorista — Premium Console</title>
+    <link rel="icon" type="image/png" href="/logo.png">
+</head>
+<body>
+    <div id="app" class="app-container">
+        <!-- Sidebar Navigation -->
+        <aside class="sidebar bento-card">
+            <div class="brand">
+                <img src="/logo.png" alt="RyR" style="width: 48px; border-radius: 12px;">
+                <div>
+                    <h1 style="font-size: 18px; margin: 0; font-weight: 800;">RyR Console</h1>
+                    <p style="font-size: 11px; color: var(--text-muted); margin: 0;">v2.0.0 — SUPABASE</p>
+                </div>
+            </div>
+
+            <nav style="margin-top: 40px; display: flex; flex-direction: column; gap: 8px;">
+                <a href="#" class="nav-link active" id="nav-catalog">
+                    <i data-lucide="layout-grid"></i> Catálogo
+                </a>
+                <a href="#" class="nav-link" id="nav-history">
+                    <i data-lucide="clock"></i> Historial
+                </a>
+                <a href="#" class="nav-link" id="nav-profile">
+                    <i data-lucide="user"></i> Mi Perfil
+                </a>
+            </nav>
+
+            <div style="margin-top: auto;">
+                <div id="user-info" class="hidden">
+                    <p id="user-email" style="font-size: 12px; margin-bottom: 12px;"></p>
+                    <button class="btn-ghost" style="width: 100%;" id="btn-logout">Cerrar Sesión</button>
+                </div>
+                <button class="btn-primary" style="width: 100%;" id="btn-login-trigger">Ingresar</button>
+            </div>
+        </aside>
+
+        <!-- Main Content Area -->
+        <main style="display: flex; flex-direction: column; gap: 20px;">
+            <header class="bento-card header-tile" style="padding: 12px 20px;">
+                <div class="search-tile">
+                    <i data-lucide="search" style="color: var(--text-muted);"></i>
+                    <input type="text" id="main-search" placeholder="Buscar productos, marcas, SKU...">
+                </div>
+                <div class="bento-card" style="padding: 0 20px; height: 56px; display: flex; align-items: center; border-radius: var(--radius-md);">
+                    <select id="tier-select" style="background: transparent; border: none; color: var(--accent); font-weight: 800; outline: none; cursor: pointer;">
+                        <option>Mayorista</option>
+                        <option selected>Especial Mayorista</option>
+                        <option>Súper Especial</option>
+                        <option>Distribuidor</option>
+                    </select>
+                </div>
+            </header>
+
+            <section class="bento-card" style="flex: 1; display: flex; flex-direction: column; gap: 20px;">
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <h2 id="view-title" style="margin: 0; font-size: 24px; font-weight: 800;">Catálogo</h2>
+                    <div id="filter-pills" style="display: flex; gap: 8px;">
+                        <!-- Filter pills injected by JS -->
+                    </div>
+                </div>
+                
+                <div id="main-view-content" class="product-grid">
+                    <!-- Products or History injected by JS -->
+                    <div style="grid-column: 1/-1; text-align: center; padding: 100px;">
+                        <div class="spinner"></div>
+                        <p style="color: var(--text-muted);">Cargando catálogo premium...</p>
+                    </div>
+                </div>
+            </section>
+        </main>
+
+        <!-- Cart / Summary Sidebar -->
+        <aside class="cart-aside bento-card" style="display: flex; flex-direction: column; gap: 20px;">
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+                <h3 style="margin: 0; font-weight: 800;">Mi Pedido</h3>
+                <span id="cart-count-badge" style="background: var(--accent); color: white; padding: 2px 8px; border-radius: 8px; font-size: 12px; font-weight: 800;">0</span>
+            </div>
+
+            <div id="cart-items-list" style="flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 12px;">
+                <!-- Cart items injected by JS -->
+            </div>
+
+            <div class="bento-card" style="background: var(--surface-brighter); padding: 16px;">
+                <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+                    <span style="color: var(--text-muted); font-size: 14px;">Subtotal</span>
+                    <span id="cart-subtotal" style="font-weight: 600;">$ 0</span>
+                </div>
+                <div style="display: flex; justify-content: space-between; margin-bottom: 16px; padding-bottom: 16px; border-bottom: 1px dashed var(--border);">
+                    <span style="color: var(--text-muted); font-size: 14px;">Envío</span>
+                    <span id="cart-shipping" style="font-weight: 600;">-</span>
+                </div>
+                <div style="display: flex; justify-content: space-between; align-items: flex-end;">
+                    <span style="font-size: 14px; font-weight: 600;">Total</span>
+                    <span id="cart-total" style="font-size: 24px; font-weight: 900; color: var(--accent);">$ 0</span>
+                </div>
+            </div>
+
+            <button class="btn-primary" id="btn-checkout" style="height: 60px; font-size: 16px; display: flex; align-items: center; justify-content: center; gap: 10px;">
+                <i data-lucide="send"></i> CONFIRMAR PEDIDO
+            </button>
+        </aside>
+
+        <!-- Auth Modal -->
+        <div id="auth-modal" class="modal-overlay">
+            <div class="auth-card">
+                <div id="login-form">
+                    <h2>Bienvenido</h2>
+                    <p style="color: var(--text-muted); margin-bottom: 24px;">Ingresa para ver tu historial y guardar tus pedidos.</p>
+                    
+                    <div style="display: flex; flex-direction: column; gap: 16px;">
+                        <div class="search-tile" style="height: 50px;">
+                            <i data-lucide="mail" style="width: 18px;"></i>
+                            <input type="email" id="auth-email" placeholder="Correo electrónico">
+                        </div>
+                        <div class="search-tile" style="height: 50px;">
+                            <i data-lucide="lock" style="width: 18px;"></i>
+                            <input type="password" id="auth-password" placeholder="Contraseña">
+                        </div>
+                        <button class="btn-primary" id="btn-login" style="margin-top: 10px;">Iniciar Sesión</button>
+                        <p style="text-align: center; font-size: 13px; color: var(--text-muted);">
+                            ¿No tienes cuenta? <a href="#" id="toggle-auth" style="color: var(--accent); text-decoration: none; font-weight: 600;">Regístrate</a>
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script type="module" src="/src/main.js"></script>
+</body>
+</html>
