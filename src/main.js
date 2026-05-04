@@ -110,20 +110,30 @@ function render() {
     const price = p.prices[state.tier] || p.prices['Mayorista'] || 0
     const imagePath = p.img || '/logo.png'
     const qty = state.cart[p.sku] || 0
-    return `
-      <div class="card">
-        <div class="img"><img src="${imagePath}" onerror="this.src='/logo.png'"></div>
-        <div class="body">
-          <div class="name">${p.name}</div>
-          <div class="price">${ARS.format(price)}</div>
-          <div class="controls">
+    
+    // Si no está logueado, ocultamos el precio y el botón de agregar
+    const priceHtml = state.user 
+      ? `<div class="price">${ARS.format(price)}</div>`
+      : `<div class="price" style="font-size: 14px; cursor: pointer; color: var(--muted);" onclick="document.getElementById('auth-modal').classList.add('show')">Ingresá para ver precios</div>`
+
+    const controlsHtml = state.user
+      ? `<div class="controls">
             <div class="qty-box">
               <button class="qty-btn" onclick="window.modQty('${p.sku}', -1)">-</button>
               <span class="qty-val">${qty}</span>
               <button class="qty-btn" onclick="window.modQty('${p.sku}', 1)">+</button>
             </div>
             <button class="btn-add" onclick="window.modQty('${p.sku}', 1)">AGREGAR</button>
-          </div>
+          </div>`
+      : `<button class="btn-add" style="background: var(--line); color: var(--muted);" onclick="document.getElementById('auth-modal').classList.add('show')">SOLICITAR ACCESO</button>`
+
+    return `
+      <div class="card">
+        <div class="img"><img src="${imagePath}" onerror="this.src='/logo.png'"></div>
+        <div class="body">
+          <div class="name">${p.name}</div>
+          ${priceHtml}
+          ${controlsHtml}
         </div>
       </div>
     `
