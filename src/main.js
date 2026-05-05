@@ -373,16 +373,27 @@ async function renderAdminOrders() {
   if (error) return els.adminContent.innerHTML = `<p>Error: ${error.message}</p>`
   
   els.adminContent.innerHTML = `<table style="width:100%; font-size:12px; border-collapse:collapse;">${(data || []).map(o => `
-    <tr style="border-bottom:1px solid var(--line);">
-      <td style="padding:10px;"><b>${o.profiles?.full_name || 'Sin Nombre'}</b><br><small>${new Date(o.created_at).toLocaleDateString()}</small></td>
-      <td style="padding:10px;">${ARS.format(o.total)}</td>
+    <tr style="border-bottom:1px solid var(--line); ${o.status === 'vendido' ? 'opacity:0.5; background:#f9f9f9;' : ''}">
       <td style="padding:10px;">
-        <details>
+        <b>${o.profiles?.full_name || 'Sin Nombre'}</b>
+        ${o.status === 'vendido' ? '<span style="color:green; font-weight:800; margin-left:5px;">[VENDIDO]</span>' : ''}
+        <br><small>${new Date(o.created_at).toLocaleString()}</small>
+      </td>
+      <td style="padding:10px; font-weight:800;">${ARS.format(o.total)}</td>
+      <td style="padding:10px; display:flex; gap:5px; align-items:center;">
+        <details style="flex:1;">
           <summary style="cursor:pointer; color:var(--accent);">Items</summary>
           <div style="padding:5px;">${Object.entries(o.items).map(([s,q]) => `• ${q}x ${state.catalogCache[s]?.name || s}<br>`).join('')}</div>
         </details>
+        ${o.status !== 'vendido' ? `<button class="btn-add" onclick="window.markOrderSold('${o.id}')" style="height:24px; padding:0 8px; font-size:10px;">VENDIDO</button>` : ''}
       </td>
     </tr>`).join('')}</table>`
+}
+
+window.markOrderSold = async (id) => {
+  if (!confirm('¿Marcar este pedido como vendido?')) return
+  await supabase.from('orders').update({ status: 'vendido' }).eq('id', id)
+  renderAdminOrders()
 }
 
 async function renderAdminUsers() {
