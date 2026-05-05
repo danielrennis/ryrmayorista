@@ -309,8 +309,9 @@ function setupEvents() {
     }, 0)
     const { data, error } = await supabase.from('orders').insert({ user_id: state.user.id, total, items: state.cart }).select().single()
     if (error) return alert(error.message)
-    alert('Pedido confirmado! Avisale a Emanuel por WhatsApp.')
-    window.open(`https://wa.me/5493624250452?text=Confirmé el pedido #${data.id.slice(0,6)}`, '_blank')
+    const customerName = state.profile?.full_name || 'Cliente'
+    const message = `Soy ${customerName}. Confirmé el pedido #${data.id.slice(0,6)} por un total de ${ARS.format(total)}.`
+    window.open(`https://wa.me/5493624250452?text=${encodeURIComponent(message)}`, '_blank')
     state.cart = {}
     renderCart()
     render()
