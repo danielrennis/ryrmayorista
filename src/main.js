@@ -291,13 +291,22 @@ function setupEvents() {
   }
 
   $('btn-do-activate').onclick = async () => {
-    const code = $('activate-code').value
+    const code = $('activate-code').value.trim().toUpperCase() // Convertimos a Mayúsculas
     if (!code) return alert('Ingresá el código')
     
-    // Verificamos si el código coincide
-    const { data, error } = await supabase.from('profiles').select('*').eq('id', state.user.id).eq('verification_code', code).maybeSingle()
+    console.log('🔐 Intentando activar con código:', code)
     
-    if (error || !data) return alert('Código incorrecto. Pedile el código correcto a Emanuel.')
+    // Verificamos si el código coincide (buscando en mayúsculas también en la DB)
+    const { data, error } = await supabase.from('profiles')
+      .select('id, verification_code')
+      .eq('id', state.user.id)
+      .maybeSingle()
+    
+    console.log('📋 Datos de perfil encontrados:', data)
+    
+    if (error || !data || !data.verification_code || data.verification_code.toUpperCase() !== code) {
+      return alert('Código incorrecto. El código que Emanuel asignó es diferente al que ingresaste.')
+    }
     
     // Si coincide, lo activamos
     const { error: upErr } = await supabase.from('profiles').update({ is_active: true }).eq('id', state.user.id)
