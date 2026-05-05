@@ -125,12 +125,15 @@ $supabase_items = array();
 foreach ($products_array as $p) {
     $supabase_items[] = array(
         "sku" => $p['sku'],
+        "name" => $p['name'],
         "price_mayorista" => (float)$p['prices']['Mayorista'],
         "price_especial" => (float)$p['prices']['Especial Mayorista'],
         "price_super" => (float)$p['prices']['Super Especial'],
         "price_distribuidor" => (float)$p['prices']['Distribuidor'],
         "image_url" => $p['imageUrls'][0],
-        "updated_at" => date('c') // Fecha actual para el ordenamiento
+        "stock" => (int)$p['stock'],
+        "last_buy" => $p['lastBuy'] ? date('c', strtotime($p['lastBuy'])) : null,
+        "updated_at" => date('c')
     );
 }
 
