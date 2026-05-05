@@ -30,6 +30,10 @@
                     <button id="btn-logout" style="background:none; border:none; cursor:pointer; color: var(--muted);"><i data-lucide="log-out" style="width: 18px;"></i></button>
                 </div>
 
+                <button id="btn-admin" class="auth-btn hidden" style="background: var(--ink); color: white; border: none; margin-right: 8px;">
+                    <i data-lucide="shield-check" style="width: 18px; margin-right: 8px;"></i> CONSOLA ADMIN
+                </button>
+
                 <div class="tile cart-tile" id="btn-cart">
                     <i data-lucide="shopping-cart" style="width: 20px;"></i>
                     <span style="margin-left: 8px;">MI PEDIDO (<span id="cart-count">0</span>)</span>
@@ -132,6 +136,26 @@
             </div>
             <div class="panel-body" id="history-content">
                 <!-- Orders will be injected here -->
+            </div>
+        </aside>
+    </div>
+
+    <!-- Admin Console Drawer -->
+    <div class="drawer" id="admin-drawer">
+        <div class="mask"></div>
+        <aside class="panel" style="width: 700px;">
+            <div class="panel-head">
+                <h2 style="margin:0; font-weight:900;">Consola de Emanuel</h2>
+                <button class="btn-close" style="background:none; border:none; font-size:32px; cursor:pointer;">&times;</button>
+            </div>
+            <div class="panel-body">
+                <div style="display:flex; gap:10px; margin-bottom:20px;">
+                    <button class="auth-btn primary" id="admin-tab-orders">PEDIDOS</button>
+                    <button class="auth-btn" id="admin-tab-users">CLIENTES PENDIENTES</button>
+                </div>
+                <div id="admin-content">
+                    <!-- Admin content injected here -->
+                </div>
             </div>
         </aside>
     </div>

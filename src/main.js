@@ -1,5 +1,5 @@
 import { login, signUp, signOut, getSession } from './auth'
-import { createIcons, LayoutGrid, Clock, User, Search, ShoppingCart, LogOut, CheckCircle } from 'lucide'
+import { createIcons, LayoutGrid, Clock, User, Search, ShoppingCart, LogOut, CheckCircle, ShieldCheck } from 'lucide'
 import { supabase } from './supabase'
 
 // --- STATE ---
@@ -33,12 +33,15 @@ const els = {
   tierSelect: $('sel-tier'),
   userEmail: $('user-email-display'),
   loggedUi: $('auth-logged'),
-  unloggedUi: $('auth-unlogged')
+  unloggedUi: $('auth-unlogged'),
+  adminBtn: $('btn-admin'),
+  adminDrawer: $('admin-drawer'),
+  adminContent: $('admin-content')
 }
 
 // --- INITIALIZATION ---
 async function init() {
-  createIcons({ icons: { LayoutGrid, Clock, User, Search, ShoppingCart, LogOut, CheckCircle } })
+  createIcons({ icons: { LayoutGrid, Clock, User, Search, ShoppingCart, LogOut, CheckCircle, ShieldCheck } })
 
   const session = await getSession()
   if (session) {
@@ -92,6 +95,9 @@ function updateAuthUi() {
     if (state.profile?.assigned_tier) {
       state.tier = state.profile.assigned_tier
       els.tierSelect.value = state.tier
+    }
+    if (state.profile?.is_admin) {
+      els.adminBtn.classList.remove('hidden')
     }
   } else {
     els.unloggedUi.classList.remove('hidden')
@@ -301,6 +307,19 @@ function setupEvents() {
 
   $('btn-logout').onclick = async () => { await signOut(); location.reload(); }
 
+  // Admin Events
+  els.adminBtn.onclick = () => { els.adminDrawer.classList.add('show'); renderAdminOrders(); }
+  $('admin-tab-orders').onclick = () => { 
+    $('admin-tab-orders').classList.add('primary'); 
+    $('admin-tab-users').classList.remove('primary'); 
+    renderAdminOrders(); 
+  }
+  $('admin-tab-users').onclick = () => { 
+    $('admin-tab-users').classList.add('primary'); 
+    $('admin-tab-orders').classList.remove('primary'); 
+    renderAdminUsers(); 
+  }
+
   $('btn-checkout').onclick = async () => {
     if (!state.user) return alert('Iniciá sesión para comprar')
     const total = Object.entries(state.cart).reduce((s, [sku, q]) => {
@@ -316,6 +335,54 @@ function setupEvents() {
     renderCart()
     render()
   }
+}
+
+async function renderAdminOrders() {
+  const { data } = await supabase.from('orders').select('*, profiles(full_name)').order('created_at', { ascending: false })
+  els.adminContent.innerHTML = `
+    <table style="width:100%; border-collapse:collapse; font-size:13px;">
+      <thead><tr style="text-align:left; color:var(--muted); border-bottom:1px solid var(--line);">
+        <th style="padding:10px;">FECHA</th><th style="padding:10px;">CLIENTE</th><th style="padding:10px;">TOTAL</th><th style="padding:10px;">ACCIONES</th>
+      </tr></thead>
+      <tbody>
+        ${(data || []).map(o => `
+          <tr style="border-bottom:1px solid var(--line);">
+            <td style="padding:10px;">${new Date(o.created_at).toLocaleDateString()}</td>
+            <td style="padding:10px;"><b>${o.profiles?.full_name || 'Desconocido'}</b></td>
+            <td style="padding:10px; font-weight:800; color:var(--accent);">${ARS.format(o.total)}</td>
+            <td style="padding:10px;"><button class="btn-ghost" onclick="alert('Ver detalle pronto...')">VER</button></td>
+          </tr>
+        `).join('')}
+      </tbody>
+    </table>
+  `
+}
+
+async function renderAdminUsers() {
+  const { data } = await supabase.from('profiles').select('*').eq('is_active', false)
+  els.adminContent.innerHTML = `
+    <div style="display:flex; flex-direction:column; gap:12px;">
+      ${(data || []).map(u => `
+        <div class="tile" style="height:auto; padding:15px; flex-direction:column; align-items:start; gap:8px;">
+          <div><b>${u.full_name}</b> (${u.dni_cuit})</div>
+          <div style="font-size:12px; color:var(--muted);">${u.id}</div>
+          <div style="display:flex; gap:10px; width:100%;">
+            <input id="vcode-${u.id}" placeholder="Código de activación" class="auth-btn" style="flex:1; height:36px; font-size:12px;">
+            <button class="btn-add" onclick="window.activateUser('${u.id}')" style="height:36px; padding:0 15px;">ACTIVAR</button>
+          </div>
+        </div>
+      `).join('') || '<p>No hay clientes pendientes</p>'}
+    </div>
+  `
+}
+
+window.activateUser = async (uid) => {
+  const code = document.getElementById(`vcode-${uid}`).value
+  if (!code) return alert('Debes asignar un código')
+  const { error } = await supabase.from('profiles').update({ verification_code: code, is_active: true }).eq('id', uid)
+  if (error) return alert(error.message)
+  alert('Cliente activado correctamente')
+  renderAdminUsers()
 }
 
 window.deleteOrder = async (id) => {
