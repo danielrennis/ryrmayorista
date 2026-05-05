@@ -11,8 +11,9 @@ const state = {
   tier: 'Mayorista',
   query: '',
   loading: true,
-  page: 1,
-  pageSize: 50
+  page: 0, // Cambiamos a 0-indexed para Supabase
+  pageSize: 50,
+  hasMore: true
 }
 
 const ARS = new Intl.NumberFormat('es-AR', {
@@ -23,7 +24,7 @@ const ARS = new Intl.NumberFormat('es-AR', {
 
 // --- DOM ELEMENTS ---
 const $ = (id) => document.getElementById(id)
-const els = {
+const getEls = () => ({
   grid: $('main-grid'),
   search: $('txt-search'),
   cartDrawer: $('cart-drawer'),
@@ -39,13 +40,22 @@ const els = {
   adminBtn: $('btn-admin'),
   adminDrawer: $('admin-drawer'),
   adminContent: $('admin-content')
-}
+})
+
+let els = {}
 
 // --- INITIALIZATION ---
 async function init() {
-  createIcons({ icons: { LayoutGrid, Clock, User, Search, ShoppingCart, LogOut, CheckCircle, ShieldCheck } })
+  els = getEls()
+  
+  // Render inicial para mostrar "Cargando..."
+  if (els.grid) els.grid.innerHTML = '<div style="grid-column:1/-1; text-align:center; padding:50px; color:var(--muted);">Cargando catálogo...</div>'
 
-  // Listener de cambios de auth (Persistencia Real)
+  try {
+    createIcons({ icons: { LayoutGrid, Clock, User, Search, ShoppingCart, LogOut, CheckCircle, ShieldCheck } })
+  } catch (e) { console.warn('Lucide error', e) }
+
+  // Listener de cambios de auth
   supabase.auth.onAuthStateChange(async (event, session) => {
     if (session) {
       state.user = session.user
@@ -59,69 +69,72 @@ async function init() {
     renderCart()
   })
 
-  // Carga inicial de productos
-  try {
-    const { data, error } = await supabase.from('products').select('*').order('updated_at', { ascending: false })
-    if (error) throw error
-    
-    if (data && data.length > 0) {
-      state.products = data.map(p => ({
-        id: p.sku,
-        sku: p.sku,
-        name: p.sku, 
-        prices: {
-          'Mayorista': p.price_mayorista || 0,
-          'Especial Mayorista': p.price_especial || 0,
-          'Súper Especial': p.price_super || 0,
-          'Distribuidor': p.price_distribuidor || 0
-        },
-        img: p.image_url
-      }))
-    } else {
-      // Fallback a JSON si la DB está vacía
-      const res = await fetch('/catalog.json')
-      const json = await res.json()
-      const raw = json.products || json
-      state.products = raw.map(p => ({
-        ...p,
-        img: (p.imageUrls && p.imageUrls[0]) || '/logo.png'
-      }))
-    }
-  } catch (e) {
-    console.error('Error cargando catálogo:', e)
-  }
-
+  // Carga inicial (Solo 50 productos para que sea instantáneo en Safari)
+  await fetchProducts()
+  
   state.loading = false
   render()
   renderCart()
   setupEvents()
 }
 
-async function fetchProfile(uid) {
+async function fetchProducts(append = false) {
   try {
-    let { data: profile, error } = await supabase.from('profiles').select('*').eq('id', uid).maybeSingle()
+    const from = state.page * state.pageSize
+    const to = from + state.pageSize - 1
+
+    const { data, error } = await supabase
+      .from('products')
+      .select('*')
+      .order('updated_at', { ascending: false })
+      .range(from, to)
+
+    if (error) throw error
     
-    // Si el usuario existe en Auth pero no tiene perfil (ej: creado a mano en el panel), lo creamos ahora
-    if (!profile && !error) {
-      const { data: newProfile, error: insError } = await supabase.from('profiles').insert({ 
-        id: uid, 
-        full_name: state.user.email.split('@')[0], 
-        dni_cuit: '000',
-        is_active: false 
-      }).select().single()
-      
-      if (!insError) profile = newProfile
+    const mapped = (data || []).map(p => ({
+      id: p.sku,
+      sku: p.sku,
+      name: p.sku, 
+      prices: {
+        'Mayorista': p.price_mayorista || 0,
+        'Especial Mayorista': p.price_especial || 0,
+        'Súper Especial': p.price_super || 0,
+        'Distribuidor': p.price_distribuidor || 0
+      },
+      img: p.image_url
+    }))
+
+    if (append) {
+      state.products = [...state.products, ...mapped]
+    } else {
+      state.products = mapped
     }
-    
-    state.profile = profile
-    if (profile?.assigned_tier) state.tier = profile.assigned_tier
+
+    state.hasMore = mapped.length === state.pageSize
   } catch (e) {
-    console.error('Error en perfil:', e)
+    console.error('Error fetchProducts:', e)
   }
 }
 
-// --- UI UPDATES ---
+async function fetchProfile(uid) {
+  try {
+    let { data: profile } = await supabase.from('profiles').select('*').eq('id', uid).maybeSingle()
+    if (!profile) {
+      const { data: newProfile } = await supabase.from('profiles').insert({ 
+        id: uid, 
+        full_name: state.user?.email?.split('@')[0] || 'Cliente', 
+        dni_cuit: '000',
+        is_active: false 
+      }).select().single()
+      profile = newProfile
+    }
+    state.profile = profile
+    if (profile?.assigned_tier) state.tier = profile.assigned_tier
+  } catch (e) { console.error('Profile fail', e) }
+}
+
 function updateAuthUi() {
+  if (!els.loggedUi) return
   if (state.user) {
     els.unloggedUi.classList.add('hidden')
     els.loggedUi.classList.remove('hidden')
@@ -136,65 +149,66 @@ function updateAuthUi() {
 }
 
 function render() {
-  if (state.loading) return
+  if (!els.grid) return
+  
   const q = state.query.toLowerCase()
   const filtered = state.products.filter(p => {
     const text = `${p.name} ${p.sku}`.toLowerCase()
     return text.includes(q)
   })
 
-  const totalFiltered = filtered.length
-  const paginated = filtered.slice(0, state.page * state.pageSize)
+  if (filtered.length === 0 && !state.loading) {
+    els.grid.innerHTML = '<div style="grid-column:1/-1; text-align:center; padding:50px; color:var(--muted);">No se encontraron productos</div>'
+    return
+  }
 
-  els.grid.innerHTML = paginated.map(p => {
+  els.grid.innerHTML = filtered.map(p => {
     const price = p.prices[state.tier] || p.prices['Mayorista'] || 0
-    const imagePath = p.img || '/logo.png'
     const qty = state.cart[p.sku] || 0
-    
     const hasDistPrice = (p.prices['Distribuidor'] || 0) > 0
-    const cardClass = hasDistPrice ? 'card is-dist' : 'card'
-    const distBadge = hasDistPrice ? '<div class="dist-label">DISTRIBUIDOR</div>' : ''
-
-    const priceHtml = state.user 
-      ? `<div class="price">${ARS.format(price)}</div>`
-      : `<div class="price" style="font-size: 14px; cursor: pointer; color: var(--muted);" onclick="document.getElementById('auth-modal').classList.add('show')">Ingresá para ver precios</div>`
-
-    const controlsHtml = state.user
-      ? `<div class="controls">
-            <div class="qty-box">
-              <button class="qty-btn" onclick="window.modQty('${p.sku}', -1)">-</button>
-              <span class="qty-val">${qty}</span>
-              <button class="qty-btn" onclick="window.modQty('${p.sku}', 1)">+</button>
-            </div>
-            <button class="btn-add" onclick="window.modQty('${p.sku}', 1)">AGREGAR</button>
-          </div>`
-      : `<button class="btn-add" style="background: var(--line); color: var(--muted);" onclick="document.getElementById('auth-modal').classList.add('show')">SOLICITAR ACCESO</button>`
-
+    
     return `
-      <div class="${cardClass}">
-        ${distBadge}
-        <div class="img"><img src="${imagePath}" onerror="this.src='/logo.png'"></div>
+      <div class="card ${hasDistPrice ? 'is-dist' : ''}">
+        ${hasDistPrice ? '<div class="dist-label">DISTRIBUIDOR</div>' : ''}
+        <div class="img"><img src="${p.img || '/logo.png'}" onerror="this.src='/logo.png'"></div>
         <div class="body">
           <div class="name">${p.name}</div>
-          ${priceHtml}
-          ${controlsHtml}
+          ${state.user 
+            ? `<div class="price">${ARS.format(price)}</div>`
+            : `<div class="price" style="font-size:13px; color:var(--muted); cursor:pointer;" onclick="document.getElementById('auth-modal').classList.add('show')">Ingresá para ver precios</div>`
+          }
+          ${state.user
+            ? `<div class="controls">
+                <div class="qty-box">
+                  <button class="qty-btn" onclick="window.modQty('${p.sku}', -1)">-</button>
+                  <span class="qty-val">${qty}</span>
+                  <button class="qty-btn" onclick="window.modQty('${p.sku}', 1)">+</button>
+                </div>
+                <button class="btn-add" onclick="window.modQty('${p.sku}', 1)">AGREGAR</button>
+              </div>`
+            : `<button class="btn-add" style="background:var(--line); color:var(--muted);" onclick="document.getElementById('auth-modal').classList.add('show')">SOLICITAR ACCESO</button>`
+          }
         </div>
       </div>
     `
   }).join('')
 
-  if (paginated.length < totalFiltered) {
+  if (state.hasMore) {
     els.grid.innerHTML += `
-      <div style="grid-column: 1/-1; text-align: center; padding: 20px;">
-        <button class="tile" style="margin: 0 auto; cursor: pointer; font-weight: 800; padding: 0 40px;" onclick="window.loadMore()">
-          CARGAR MÁS (${totalFiltered - paginated.length} restantes)
-        </button>
+      <div style="grid-column:1/-1; text-align:center; padding:20px;">
+        <button id="btn-load-more" class="tile" style="margin:0 auto; cursor:pointer; font-weight:800; padding:0 40px;">CARGAR MÁS</button>
       </div>
     `
+    // Necesitamos re-bindear el evento porque innerHTML lo borra
+    setTimeout(() => {
+      const btn = $('btn-load-more')
+      if (btn) btn.onclick = window.loadMore
+    }, 10)
   }
 }
 
 function renderCart() {
+  if (!els.cartItems) return
   let total = 0
   let count = 0
   const html = Object.entries(state.cart).map(([sku, qty]) => {
@@ -205,12 +219,12 @@ function renderCart() {
     count += qty
     return `
       <div style="display:flex; gap:12px; align-items:center; margin-bottom:12px; padding:10px; border-bottom:1px solid var(--line);">
-        <img src="${p.img || '/logo.png'}" style="width:50px; height:50px; object-fit:contain; border-radius:8px; border:1px solid var(--line); background:white;">
+        <img src="${p.img || '/logo.png'}" style="width:40px; height:40px; object-fit:contain; border-radius:5px; border:1px solid var(--line); background:white;">
         <div style="flex:1;">
-          <div style="font-weight:700; font-size:13px;">${p.name}</div>
-          <div style="color:var(--accent); font-weight:800; font-size:14px;">${qty} x ${ARS.format(price)}</div>
+          <div style="font-weight:700; font-size:12px;">${p.name}</div>
+          <div style="color:var(--accent); font-weight:800; font-size:13px;">${qty} x ${ARS.format(price)}</div>
         </div>
-        <button onclick="window.modQty('${sku}', -999)" style="background:none; border:none; cursor:pointer; color:var(--muted); font-size:20px;">&times;</button>
+        <button onclick="window.modQty('${sku}', -999)" style="background:none; border:none; cursor:pointer; color:var(--muted); font-size:18px;">&times;</button>
       </div>
     `
   }).join('')
@@ -221,68 +235,50 @@ function renderCart() {
   localStorage.setItem('ryr_cart_v2', JSON.stringify(state.cart))
 }
 
-// --- EVENTS ---
 function setupEvents() {
-  els.search.oninput = (e) => { state.page = 1; state.query = e.target.value; render(); }
-  els.tierSelect.onchange = (e) => { state.tier = e.target.value; render(); renderCart(); }
-  
-  $('btn-cart').onclick = () => els.cartDrawer.classList.add('show')
-  $('btn-open-login').onclick = () => {
-    $('login-form').classList.remove('hidden')
-    $('register-form').classList.add('hidden')
-    $('activation-form').classList.add('hidden')
-    els.authModal.classList.add('show')
+  els.search.oninput = async (e) => { 
+    state.query = e.target.value
+    if (state.query.length > 2) {
+      // Búsqueda real en base de datos para no limitarnos a los 50 cargados
+      const { data } = await supabase.from('products').select('*').ilike('sku', `%${state.query}%`).limit(50)
+      if (data) {
+        state.products = data.map(p => ({
+          id: p.sku, sku: p.sku, name: p.sku, img: p.image_url,
+          prices: { 'Mayorista': p.price_mayorista || 0, 'Especial Mayorista': p.price_especial || 0, 'Súper Especial': p.price_super || 0, 'Distribuidor': p.price_distribuidor || 0 }
+        }))
+        state.hasMore = false // En búsqueda desactivamos el cargar más simple
+        render()
+      }
+    } else if (state.query.length === 0) {
+      state.page = 0
+      await fetchProducts()
+      render()
+    }
   }
+
+  els.tierSelect.onchange = (e) => { state.tier = e.target.value; render(); renderCart(); }
+  $('btn-cart').onclick = () => els.cartDrawer.classList.add('show')
+  $('btn-open-login').onclick = () => els.authModal.classList.add('show')
   
   $('btn-history').onclick = async () => {
     if (!state.user) return alert('Iniciá sesión para ver tus pedidos')
     els.historyDrawer.classList.add('show')
     const { data } = await supabase.from('orders').select('*').eq('user_id', state.user.id).order('created_at', { ascending: false })
-    $('history-content').innerHTML = (data || []).map(o => {
-      const itemsCount = Object.values(o.items).reduce((a,b) => a+b, 0)
-      return `
-        <div class="history-card" style="padding:15px; border-bottom:1px solid var(--line); position:relative;">
-          <div style="display:flex; justify-content:space-between; align-items:start;">
-            <div>
-              <b>Pedido #${o.id.slice(0,6)}</b><br>
-              <small>${new Date(o.created_at).toLocaleDateString()} - ${itemsCount} items</small>
-            </div>
-            <div style="text-align:right;">
-              <div style="font-weight:800; color:var(--accent); font-size:18px;">${ARS.format(o.total)}</div>
-              <div style="display:flex; gap:10px; margin-top:8px; justify-content:flex-end;">
-                <button class="btn-ghost" onclick="window.reOpenOrder('${o.id}')" style="padding:4px 8px; font-size:11px;">RE-EDITAR</button>
-                <button class="btn-ghost" onclick="window.deleteOrder('${o.id}')" style="padding:4px 8px; font-size:11px; color:red;">BORRAR</button>
-              </div>
-            </div>
+    $('history-content').innerHTML = (data || []).map(o => `
+      <div class="history-card" style="padding:15px; border-bottom:1px solid var(--line);">
+        <div style="display:flex; justify-content:space-between; align-items:start;">
+          <div><b>Pedido #${o.id.slice(0,6)}</b><br><small>${new Date(o.created_at).toLocaleDateString()}</small></div>
+          <div style="text-align:right;">
+            <div style="font-weight:800; color:var(--accent);">${ARS.format(o.total)}</div>
+            <button class="btn-ghost" onclick="window.deleteOrder('${o.id}')" style="color:red; font-size:10px; padding:2px;">BORRAR</button>
           </div>
-          <details style="margin-top:10px; font-size:12px; color:var(--muted);">
-            <summary style="cursor:pointer; font-weight:700;">Ver detalle de productos</summary>
-            <div style="padding-top:8px;">
-              ${Object.entries(o.items).map(([sku, q]) => {
-                const p = state.products.find(x => x.sku === sku)
-                return `• ${q} x ${p ? p.name : sku}<br>`
-              }).join('')}
-            </div>
-          </details>
         </div>
-      `
-    }).join('') || '<p style="text-align:center; padding:40px;">Aún no tienes pedidos</p>'
+      </div>
+    `).join('') || '<p style="text-align:center; padding:20px;">No hay pedidos</p>'
   }
 
-  // Admin Events
   els.adminBtn.onclick = () => { els.adminDrawer.classList.add('show'); renderAdminOrders(); }
-  $('admin-tab-orders').onclick = () => { 
-    $('admin-tab-orders').classList.add('primary'); 
-    $('admin-tab-users').classList.remove('primary'); 
-    renderAdminOrders(); 
-  }
-  $('admin-tab-users').onclick = () => { 
-    $('admin-tab-users').classList.add('primary'); 
-    $('admin-tab-orders').classList.remove('primary'); 
-    renderAdminUsers(); 
-  }
 
-  // Drawers Close
   document.querySelectorAll('.btn-close, .mask').forEach(b => {
     b.onclick = () => {
       els.cartDrawer.classList.remove('show')
@@ -292,171 +288,60 @@ function setupEvents() {
     }
   })
 
-  // Auth Actions
-  $('go-register').onclick = () => { $('login-form').classList.add('hidden'); $('register-form').classList.remove('hidden'); }
-  $('go-login').onclick = () => { $('register-form').classList.add('hidden'); $('login-form').classList.remove('hidden'); }
-  
   $('btn-do-login').onclick = async () => {
     try {
-      const { data, error } = await supabase.auth.signInWithPassword({
-        email: $('login-email').value,
-        password: $('login-pass').value
-      })
+      const { error } = await supabase.auth.signInWithPassword({ email: $('login-email').value, password: $('login-pass').value })
       if (error) throw error
-      // El onAuthStateChange se encarga del resto
     } catch (e) { alert('Error: ' + e.message) }
-  }
-
-  $('btn-do-register').onclick = async () => {
-    try {
-      const email = $('reg-email').value
-      const { data, error } = await supabase.auth.signUp({ email, password: $('reg-pass').value })
-      if (error) throw error
-      await supabase.from('profiles').insert({ 
-        id: data.user.id, 
-        full_name: $('reg-name').value, 
-        dni_cuit: $('reg-dni').value, 
-        is_active: false 
-      })
-      $('register-form').classList.add('hidden'); $('activation-form').classList.remove('hidden');
-    } catch (e) { alert('Error: ' + e.message) }
-  }
-
-  $('btn-do-activate').onclick = async () => {
-    if (state.profile?.verification_code === $('activate-code').value) {
-      await supabase.from('profiles').update({ is_active: true }).eq('id', state.user.id)
-      alert('¡Cuenta activada!')
-      location.reload()
-    } else { alert('Código incorrecto') }
-  }
-
-  $('btn-wa-emanuel').onclick = () => {
-    const text = `Hola! Me registré en la web y necesito mi código de activación.`
-    window.open(`https://wa.me/5493624250452?text=${encodeURIComponent(text)}`, '_blank')
   }
 
   $('btn-logout').onclick = async () => { await signOut(); location.reload(); }
 
   $('btn-checkout').onclick = async () => {
     if (!state.user) return alert('Iniciá sesión para comprar')
-    if (state.profile && !state.profile.is_active) return alert('Tu cuenta está pendiente de activación')
-    
-    const items = state.cart
-    const total = Object.entries(items).reduce((s, [sku, q]) => {
+    const total = Object.entries(state.cart).reduce((s, [sku, q]) => {
       const p = state.products.find(x => x.sku === sku)
       return s + ((p?.prices[state.tier] || 0) * q)
     }, 0)
-
-    if (total <= 0) return alert('El carrito está vacío')
-
-    const { data, error } = await supabase.from('orders').insert({ 
-      user_id: state.user.id, 
-      total, 
-      items 
-    }).select().single()
-    
-    if (error) return alert('Error al guardar pedido: ' + error.message)
-    
+    const { data, error } = await supabase.from('orders').insert({ user_id: state.user.id, total, items: state.cart }).select().single()
+    if (error) return alert(error.message)
     const customerName = state.profile?.full_name || 'Cliente'
-    const msg = `Soy ${customerName}. Confirmé el pedido #${data.id.slice(0,6)} por un total de ${ARS.format(total)}.`
-    window.open(`https://wa.me/5493624250452?text=${encodeURIComponent(msg)}`, '_blank')
-    
+    window.open(`https://wa.me/5493624250452?text=${encodeURIComponent(`Soy ${customerName}. Confirmé el pedido #${data.id.slice(0,6)} por ${ARS.format(total)}`)}`, '_blank')
     state.cart = {}
-    renderCart()
-    render()
-    els.cartDrawer.classList.remove('show')
-    alert('¡Pedido enviado con éxito!')
+    renderCart(); render();
+    alert('Pedido confirmado!')
   }
 }
 
-// --- ADMIN RENDERERS ---
-async function renderAdminOrders() {
-  const { data } = await supabase.from('orders').select('*, profiles(full_name)').order('created_at', { ascending: false })
-  els.adminContent.innerHTML = `
-    <table style="width:100%; border-collapse:collapse; font-size:13px;">
-      <thead><tr style="text-align:left; color:var(--muted); border-bottom:1px solid var(--line);">
-        <th style="padding:10px;">FECHA</th><th style="padding:10px;">CLIENTE</th><th style="padding:10px;">TOTAL</th><th style="padding:10px;">DETALLE</th>
-      </tr></thead>
-      <tbody>
-        ${(data || []).map(o => `
-          <tr style="border-bottom:1px solid var(--line);">
-            <td style="padding:10px;">${new Date(o.created_at).toLocaleDateString()}</td>
-            <td style="padding:10px;"><b>${o.profiles?.full_name || 'Cliente'}</b></td>
-            <td style="padding:10px; font-weight:800; color:var(--accent);">${ARS.format(o.total)}</td>
-            <td style="padding:10px;">
-              <details style="font-size:11px;">
-                <summary style="cursor:pointer; color:var(--accent);">Ver items</summary>
-                <div style="padding:5px; background:var(--bg); border-radius:5px;">
-                  ${Object.entries(o.items).map(([sku, q]) => `• ${q} x ${sku}<br>`).join('')}
-                </div>
-              </details>
-            </td>
-          </tr>
-        `).join('')}
-      </tbody>
-    </table>
-  `
-}
-
-async function renderAdminUsers() {
-  const { data } = await supabase.from('profiles').select('*').eq('is_active', false)
-  els.adminContent.innerHTML = `
-    <div style="display:flex; flex-direction:column; gap:12px;">
-      ${(data || []).map(u => `
-        <div class="tile" style="height:auto; padding:15px; flex-direction:column; align-items:start; gap:8px;">
-          <div style="width:100%; display:flex; justify-content:space-between;">
-            <b>${u.full_name}</b>
-            <span style="font-size:11px; background:var(--line); padding:2px 8px; border-radius:10px;">${u.dni_cuit}</span>
-          </div>
-          <div style="display:flex; gap:10px; width:100%; margin-top:10px;">
-            <input id="vcode-${u.id}" placeholder="Código de activación" class="auth-btn" style="flex:1; height:36px; font-size:12px; border:1px solid var(--line);">
-            <button class="btn-add" onclick="window.activateUser('${u.id}')" style="height:36px; padding:0 15px;">ACTIVAR</button>
-          </div>
-        </div>
-      `).join('') || '<p style="text-align:center; padding:20px;">No hay clientes pendientes de activación</p>'}
-    </div>
-  `
-}
-
-window.activateUser = async (uid) => {
-  const code = document.getElementById(`vcode-${uid}`).value
-  if (!code) return alert('Debes asignar un código')
-  const { error } = await supabase.from('profiles').update({ verification_code: code, is_active: true }).eq('id', uid)
-  if (error) return alert(error.message)
-  alert('Cliente activado correctamente')
-  renderAdminUsers()
-}
-
-window.deleteOrder = async (id) => {
-  if (!confirm('¿Seguro querés eliminar este pedido?')) return
-  const { error } = await supabase.from('orders').delete().eq('id', id)
-  if (error) return alert(error.message)
-  $('btn-history').click()
-}
-
-window.reOpenOrder = async (id) => {
-  if (!confirm('Esto cargará los productos del pedido en tu carrito actual. ¿Continuar?')) return
-  const { data } = await supabase.from('orders').select('items').eq('id', id).single()
-  if (data) {
-    state.cart = { ...state.cart, ...data.items }
-    renderCart()
-    render()
-    els.historyDrawer.classList.remove('show')
-    els.cartDrawer.classList.add('show')
-  }
+window.loadMore = async () => {
+  state.page++
+  const btn = $('btn-load-more')
+  if (btn) btn.textContent = 'CARGANDO...'
+  await fetchProducts(true)
+  render()
 }
 
 window.modQty = (sku, delta) => {
   const current = state.cart[sku] || 0
   if (current + delta <= 0) delete state.cart[sku]
   else state.cart[sku] = current + delta
-  renderCart()
-  render()
+  renderCart(); render();
 }
 
-window.loadMore = () => {
-  state.page++
-  render()
+window.deleteOrder = async (id) => {
+  if (!confirm('Eliminar?')) return
+  await supabase.from('orders').delete().eq('id', id)
+  $('btn-history').click()
+}
+
+async function renderAdminOrders() {
+  const { data } = await supabase.from('orders').select('*, profiles(full_name)').order('created_at', { ascending: false })
+  els.adminContent.innerHTML = (data || []).map(o => `
+    <div style="padding:10px; border-bottom:1px solid var(--line); font-size:12px;">
+      <b>${o.profiles?.full_name}</b> - ${ARS.format(o.total)}<br>
+      <small>${new Date(o.created_at).toLocaleString()}</small>
+    </div>
+  `).join('')
 }
 
 init()
