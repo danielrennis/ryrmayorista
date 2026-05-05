@@ -10,7 +10,9 @@ const state = {
   profile: null,
   tier: 'Mayorista',
   query: '',
-  loading: true
+  loading: true,
+  page: 1,
+  pageSize: 50
 }
 
 const ARS = new Intl.NumberFormat('es-AR', {
@@ -113,7 +115,10 @@ function render() {
     return text.includes(q)
   })
 
-  els.grid.innerHTML = filtered.map(p => {
+  const totalFiltered = filtered.length
+  const paginated = filtered.slice(0, state.page * state.pageSize)
+
+  els.grid.innerHTML = paginated.map(p => {
     const price = p.prices[state.tier] || p.prices['Mayorista'] || 0
     const imagePath = p.img || '/logo.png'
     const qty = state.cart[p.sku] || 0
@@ -151,6 +156,22 @@ function render() {
       </div>
     `
   }).join('')
+
+  // Botón Cargar Más
+  if (paginated.length < totalFiltered) {
+    els.grid.innerHTML += `
+      <div style="grid-column: 1/-1; text-align: center; padding: 20px;">
+        <button class="tile" style="margin: 0 auto; cursor: pointer; font-weight: 800; padding: 0 40px;" onclick="window.loadMore()">
+          CARGAR MÁS (${totalFiltered - paginated.length} restantes)
+        </button>
+      </div>
+    `
+  }
+}
+
+window.loadMore = () => {
+  state.page++
+  render()
 }
 
 function renderCart() {
@@ -182,7 +203,7 @@ function renderCart() {
 
 // --- EVENTS ---
 function setupEvents() {
-  els.search.oninput = (e) => { state.query = e.target.value; render(); }
+  els.search.oninput = (e) => { state.query = e.target.value; state.page = 1; render(); }
   els.tierSelect.onchange = (e) => { state.tier = e.target.value; render(); renderCart(); }
   
   $('btn-cart').onclick = () => els.cartDrawer.classList.add('show')
