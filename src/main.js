@@ -1,5 +1,5 @@
 import { login, signUp, signOut, getSession } from './auth'
-import { createIcons, LayoutGrid, Clock, User, Search, ShoppingCart, LogOut, CheckCircle, ShieldCheck } from 'lucide'
+import * as lucide from 'lucide'
 import { supabase } from './supabase'
 
 // --- STATE ---
@@ -11,7 +11,7 @@ const state = {
   tier: 'Mayorista',
   query: '',
   loading: true,
-  page: 0, // Cambiamos a 0-indexed para Supabase
+  page: 0,
   pageSize: 50,
   hasMore: true
 }
@@ -22,40 +22,45 @@ const ARS = new Intl.NumberFormat('es-AR', {
   minimumFractionDigits: 0
 })
 
-// --- DOM ELEMENTS ---
 const $ = (id) => document.getElementById(id)
-const getEls = () => ({
-  grid: $('main-grid'),
-  search: $('txt-search'),
-  cartDrawer: $('cart-drawer'),
-  authModal: $('auth-modal'),
-  historyDrawer: $('history-drawer'),
-  cartItems: $('cart-items'),
-  cartTotal: $('cart-total'),
-  cartCount: $('cart-count'),
-  tierSelect: $('sel-tier'),
-  userEmail: $('user-email-display'),
-  loggedUi: $('auth-logged'),
-  unloggedUi: $('auth-unlogged'),
-  adminBtn: $('btn-admin'),
-  adminDrawer: $('admin-drawer'),
-  adminContent: $('admin-content')
-})
-
 let els = {}
+
+function getEls() {
+  return {
+    grid: $('main-grid'),
+    search: $('txt-search'),
+    cartDrawer: $('cart-drawer'),
+    authModal: $('auth-modal'),
+    historyDrawer: $('history-drawer'),
+    cartItems: $('cart-items'),
+    cartTotal: $('cart-total'),
+    cartCount: $('cart-count'),
+    tierSelect: $('sel-tier'),
+    userEmail: $('user-email-display'),
+    loggedUi: $('auth-logged'),
+    unloggedUi: $('auth-unlogged'),
+    adminBtn: $('btn-admin'),
+    adminDrawer: $('admin-drawer'),
+    adminContent: $('admin-content')
+  }
+}
 
 // --- INITIALIZATION ---
 async function init() {
   els = getEls()
   
-  // Render inicial para mostrar "Cargando..."
-  if (els.grid) els.grid.innerHTML = '<div style="grid-column:1/-1; text-align:center; padding:50px; color:var(--muted);">Cargando catálogo...</div>'
+  if (els.grid) {
+    els.grid.innerHTML = '<div style="grid-column:1/-1; text-align:center; padding:50px; color:var(--muted); font-weight:700;">CARGANDO CATÁLOGO...</div>'
+  }
 
   try {
-    createIcons({ icons: { LayoutGrid, Clock, User, Search, ShoppingCart, LogOut, CheckCircle, ShieldCheck } })
-  } catch (e) { console.warn('Lucide error', e) }
+    const icons = { LayoutGrid: lucide.LayoutGrid, Clock: lucide.Clock, User: lucide.User, Search: lucide.Search, ShoppingCart: lucide.ShoppingCart, LogOut: lucide.LogOut, CheckCircle: lucide.CheckCircle, ShieldCheck: lucide.ShieldCheck }
+    lucide.createIcons({ icons })
+  } catch (e) {
+    console.warn('Icon error', e)
+  }
 
-  // Listener de cambios de auth
+  // Listener Auth
   supabase.auth.onAuthStateChange(async (event, session) => {
     if (session) {
       state.user = session.user
@@ -69,7 +74,7 @@ async function init() {
     renderCart()
   })
 
-  // Carga inicial (Solo 50 productos para que sea instantáneo en Safari)
+  // Carga inicial
   await fetchProducts()
   
   state.loading = false
@@ -92,7 +97,6 @@ async function fetchProducts(append = false) {
     if (error) throw error
     
     const mapped = (data || []).map(p => ({
-      id: p.sku,
       sku: p.sku,
       name: p.sku, 
       prices: {
@@ -104,32 +108,24 @@ async function fetchProducts(append = false) {
       img: p.image_url
     }))
 
-    if (append) {
-      state.products = [...state.products, ...mapped]
-    } else {
-      state.products = mapped
-    }
+    if (append) state.products = [...state.products, ...mapped]
+    else state.products = mapped
 
     state.hasMore = mapped.length === state.pageSize
   } catch (e) {
-    console.error('Error fetchProducts:', e)
+    console.error('Fetch fail', e)
+    state.loading = false
+    if (els.grid) els.grid.innerHTML = '<div style="grid-column:1/-1; text-align:center; padding:50px; color:red;">Error de conexión. Reintenta.</div>'
   }
 }
 
 async function fetchProfile(uid) {
   try {
-    let { data: profile } = await supabase.from('profiles').select('*').eq('id', uid).maybeSingle()
-    if (!profile) {
-      const { data: newProfile } = await supabase.from('profiles').insert({ 
-        id: uid, 
-        full_name: state.user?.email?.split('@')[0] || 'Cliente', 
-        dni_cuit: '000',
-        is_active: false 
-      }).select().single()
-      profile = newProfile
+    const { data } = await supabase.from('profiles').select('*').eq('id', uid).maybeSingle()
+    if (data) {
+      state.profile = data
+      if (data.assigned_tier) state.tier = data.assigned_tier
     }
-    state.profile = profile
-    if (profile?.assigned_tier) state.tier = profile.assigned_tier
   } catch (e) { console.error('Profile fail', e) }
 }
 
@@ -153,14 +149,8 @@ function render() {
   
   const q = state.query.toLowerCase()
   const filtered = state.products.filter(p => {
-    const text = `${p.name} ${p.sku}`.toLowerCase()
-    return text.includes(q)
+    return p.sku.toLowerCase().includes(q)
   })
-
-  if (filtered.length === 0 && !state.loading) {
-    els.grid.innerHTML = '<div style="grid-column:1/-1; text-align:center; padding:50px; color:var(--muted);">No se encontraron productos</div>'
-    return
-  }
 
   els.grid.innerHTML = filtered.map(p => {
     const price = p.prices[state.tier] || p.prices['Mayorista'] || 0
@@ -199,10 +189,9 @@ function render() {
         <button id="btn-load-more" class="tile" style="margin:0 auto; cursor:pointer; font-weight:800; padding:0 40px;">CARGAR MÁS</button>
       </div>
     `
-    // Necesitamos re-bindear el evento porque innerHTML lo borra
     setTimeout(() => {
-      const btn = $('btn-load-more')
-      if (btn) btn.onclick = window.loadMore
+      const b = $('btn-load-more')
+      if (b) b.onclick = window.loadMore
     }, 10)
   }
 }
@@ -236,23 +225,22 @@ function renderCart() {
 }
 
 function setupEvents() {
-  els.search.oninput = async (e) => { 
+  els.search.oninput = async (e) => {
     state.query = e.target.value
-    if (state.query.length > 2) {
-      // Búsqueda real en base de datos para no limitarnos a los 50 cargados
-      const { data } = await supabase.from('products').select('*').ilike('sku', `%${state.query}%`).limit(50)
-      if (data) {
-        state.products = data.map(p => ({
-          id: p.sku, sku: p.sku, name: p.sku, img: p.image_url,
-          prices: { 'Mayorista': p.price_mayorista || 0, 'Especial Mayorista': p.price_especial || 0, 'Súper Especial': p.price_super || 0, 'Distribuidor': p.price_distribuidor || 0 }
-        }))
-        state.hasMore = false // En búsqueda desactivamos el cargar más simple
-        render()
-      }
-    } else if (state.query.length === 0) {
+    if (state.query.length === 0) {
       state.page = 0
       await fetchProducts()
       render()
+    } else if (state.query.length > 2) {
+      const { data } = await supabase.from('products').select('*').ilike('sku', `%${state.query}%`).limit(50)
+      if (data) {
+        state.products = data.map(p => ({
+          sku: p.sku, name: p.sku, img: p.image_url,
+          prices: { 'Mayorista': p.price_mayorista || 0, 'Especial Mayorista': p.price_especial || 0, 'Súper Especial': p.price_super || 0, 'Distribuidor': p.price_distribuidor || 0 }
+        }))
+        state.hasMore = false
+        render()
+      }
     }
   }
 
@@ -260,31 +248,11 @@ function setupEvents() {
   $('btn-cart').onclick = () => els.cartDrawer.classList.add('show')
   $('btn-open-login').onclick = () => els.authModal.classList.add('show')
   
-  $('btn-history').onclick = async () => {
-    if (!state.user) return alert('Iniciá sesión para ver tus pedidos')
-    els.historyDrawer.classList.add('show')
-    const { data } = await supabase.from('orders').select('*').eq('user_id', state.user.id).order('created_at', { ascending: false })
-    $('history-content').innerHTML = (data || []).map(o => `
-      <div class="history-card" style="padding:15px; border-bottom:1px solid var(--line);">
-        <div style="display:flex; justify-content:space-between; align-items:start;">
-          <div><b>Pedido #${o.id.slice(0,6)}</b><br><small>${new Date(o.created_at).toLocaleDateString()}</small></div>
-          <div style="text-align:right;">
-            <div style="font-weight:800; color:var(--accent);">${ARS.format(o.total)}</div>
-            <button class="btn-ghost" onclick="window.deleteOrder('${o.id}')" style="color:red; font-size:10px; padding:2px;">BORRAR</button>
-          </div>
-        </div>
-      </div>
-    `).join('') || '<p style="text-align:center; padding:20px;">No hay pedidos</p>'
-  }
-
   els.adminBtn.onclick = () => { els.adminDrawer.classList.add('show'); renderAdminOrders(); }
 
   document.querySelectorAll('.btn-close, .mask').forEach(b => {
     b.onclick = () => {
-      els.cartDrawer.classList.remove('show')
-      els.authModal.classList.remove('show')
-      els.historyDrawer.classList.remove('show')
-      els.adminDrawer.classList.remove('show')
+      els.cartDrawer.classList.remove('show'); els.authModal.classList.remove('show'); els.historyDrawer.classList.remove('show'); els.adminDrawer.classList.remove('show');
     }
   })
 
@@ -307,31 +275,22 @@ function setupEvents() {
     if (error) return alert(error.message)
     const customerName = state.profile?.full_name || 'Cliente'
     window.open(`https://wa.me/5493624250452?text=${encodeURIComponent(`Soy ${customerName}. Confirmé el pedido #${data.id.slice(0,6)} por ${ARS.format(total)}`)}`, '_blank')
-    state.cart = {}
-    renderCart(); render();
+    state.cart = {}; renderCart(); render();
     alert('Pedido confirmado!')
   }
 }
 
 window.loadMore = async () => {
   state.page++
-  const btn = $('btn-load-more')
-  if (btn) btn.textContent = 'CARGANDO...'
   await fetchProducts(true)
   render()
 }
 
 window.modQty = (sku, delta) => {
-  const current = state.cart[sku] || 0
-  if (current + delta <= 0) delete state.cart[sku]
-  else state.cart[sku] = current + delta
+  const c = state.cart[sku] || 0
+  if (c + delta <= 0) delete state.cart[sku]
+  else state.cart[sku] = c + delta
   renderCart(); render();
-}
-
-window.deleteOrder = async (id) => {
-  if (!confirm('Eliminar?')) return
-  await supabase.from('orders').delete().eq('id', id)
-  $('btn-history').click()
 }
 
 async function renderAdminOrders() {
