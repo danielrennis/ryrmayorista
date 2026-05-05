@@ -5,6 +5,7 @@ import { supabase } from './supabase'
 // --- STATE ---
 const state = {
   products: [],
+  catalogCache: {}, // Cache para guardar nombres/precios de productos fuera de la página actual
   cart: JSON.parse(localStorage.getItem('ryr_cart_v2') || '{}'),
   user: null,
   profile: null,
@@ -49,19 +50,14 @@ function getEls() {
 // --- INITIALIZATION ---
 async function init() {
   els = getEls()
-  
-  try {
-    createIcons({ icons: { LayoutGrid, Clock, User, Search, ShoppingCart, LogOut, CheckCircle, ShieldCheck } })
-  } catch (e) { console.warn('Lucide icon error', e) }
+  try { createIcons({ icons: { LayoutGrid, Clock, User, Search, ShoppingCart, LogOut, CheckCircle, ShieldCheck } }) } catch (e) {}
 
-  // 1. CARGA INSTANTÁNEA JSON
   await fetchJsonFallback()
   state.loading = false
   render()
   renderCart()
   setupEvents()
 
-  // 2. SUPABASE Y AUTH EN FONDO
   supabase.auth.onAuthStateChange(async (event, session) => {
     state.user = session?.user || null
     if (state.user) await fetchProfile(state.user.id)
@@ -72,10 +68,7 @@ async function init() {
 
   setTimeout(async () => {
     const ok = await fetchProducts()
-    if (ok) {
-      state.isFallback = false
-      render()
-    }
+    if (ok) { state.isFallback = false; render(); }
   }, 1000)
 }
 
@@ -86,21 +79,18 @@ async function fetchProducts(append = false) {
     const { data, error } = await supabase.from('products').select('*').order('last_buy', { ascending: false }).range(from, to)
     if (error) throw error
     
-    const mapped = (data || []).map(p => ({
-      sku: p.sku,
-      name: p.name || p.sku, 
-      prices: {
-        'Mayorista': p.price_mayorista || 0,
-        'Especial Mayorista': p.price_especial || 0,
-        'Súper Especial': p.price_super || 0,
-        'Distribuidor': p.price_distribuidor || 0
-      },
-      img: p.image_url || '/logo.png'
-    }))
+    const mapped = (data || []).map(p => {
+      const item = {
+        sku: p.sku, name: p.name || p.sku, 
+        prices: { 'Mayorista': p.price_mayorista || 0, 'Especial Mayorista': p.price_especial || 0, 'Súper Especial': p.price_super || 0, 'Distribuidor': p.price_distribuidor || 0 },
+        img: p.image_url || '/logo.png'
+      }
+      state.catalogCache[p.sku] = item // Alimentamos la cache
+      return item
+    })
 
     if (append) state.products = [...state.products, ...mapped]
     else state.products = mapped
-
     state.hasMore = mapped.length === state.pageSize
     return true
   } catch (e) { return false }
@@ -111,21 +101,15 @@ async function fetchJsonFallback() {
     const res = await fetch('/catalog.json')
     const json = await res.json()
     let raw = json.products || json
-    raw.sort((a, b) => {
-      const dateA = a.lastBuy ? new Date(a.lastBuy) : new Date(0)
-      const dateB = b.lastBuy ? new Date(b.lastBuy) : new Date(0)
-      return dateB - dateA
+    raw.sort((a, b) => (new Date(b.lastBuy || 0) - new Date(a.lastBuy || 0)))
+    state.products = raw.map(p => {
+      const item = { sku: p.sku, name: p.name || p.sku, prices: p.prices, img: (p.imageUrls && p.imageUrls[0]) || '/logo.png' }
+      state.catalogCache[p.sku] = item
+      return item
     })
-
-    state.products = raw.map(p => ({
-      sku: p.sku,
-      name: p.name || p.sku,
-      prices: p.prices,
-      img: (p.imageUrls && p.imageUrls[0]) || '/logo.png'
-    }))
     state.hasMore = false
     state.isFallback = true
-  } catch (e) { console.error('JSON failure:', e) }
+  } catch (e) {}
 }
 
 async function fetchProfile(uid) {
@@ -143,8 +127,7 @@ function updateAuthUi() {
     els.userEmail.textContent = state.user.email
     if (state.profile?.is_admin) els.adminBtn.classList.remove('hidden')
   } else {
-    els.unloggedUi.classList.remove('hidden'); els.loggedUi.classList.add('hidden')
-    els.adminBtn.classList.add('hidden')
+    els.unloggedUi.classList.remove('hidden'); els.loggedUi.classList.add('hidden'); els.adminBtn.classList.add('hidden')
   }
 }
 
@@ -152,29 +135,22 @@ function render() {
   if (!els.grid) return
   const q = state.query.toLowerCase()
   const filtered = state.products.filter(p => (p.sku + p.name).toLowerCase().includes(q))
-
   const limit = state.isFallback ? 500 : (state.page + 1) * state.pageSize
-  const items = filtered.slice(0, limit)
-
-  els.grid.innerHTML = items.map(p => {
+  
+  els.grid.innerHTML = filtered.slice(0, limit).map(p => {
     const price = p.prices[state.tier] || p.prices['Mayorista'] || 0
     const qty = state.cart[p.sku] || 0
     const isDist = (p.prices['Distribuidor'] || 0) > 0
-    
     return `
       <div class="card ${isDist ? 'is-dist' : ''}">
         ${isDist ? '<div class="dist-label">DISTRIBUIDOR</div>' : ''}
         <div class="img"><img src="${p.img || '/logo.png'}" onerror="this.src='/logo.png'"></div>
         <div class="body">
           <div class="name">${p.name}</div>
-          ${state.user ? `<div class="price">${ARS.format(price)}</div>` : `<div class="price" style="font-size:12px; color:var(--muted); cursor:pointer;" onclick="$('auth-modal').classList.add('show')">Ingresá para ver precios</div>`}
+          ${state.user ? `<div class="price">${ARS.format(price)}</div>` : `<div class="price" onclick="$('auth-modal').classList.add('show')" style="cursor:pointer; font-size:12px; color:var(--muted);">Ver precios</div>`}
           <div class="controls">
             ${state.user ? `
-              <div class="qty-box">
-                <button class="qty-btn" onclick="window.modQty('${p.sku}', -1)">-</button>
-                <span class="qty-val">${qty}</span>
-                <button class="qty-btn" onclick="window.modQty('${p.sku}', 1)">+</button>
-              </div>
+              <div class="qty-box"><button class="qty-btn" onclick="window.modQty('${p.sku}', -1)">-</button><span class="qty-val">${qty}</span><button class="qty-btn" onclick="window.modQty('${p.sku}', 1)">+</button></div>
               <button class="btn-add" onclick="window.modQty('${p.sku}', 1)">SUMAR</button>
             ` : `<button class="btn-add" onclick="$('auth-modal').classList.add('show')">INGRESAR</button>`}
           </div>
@@ -189,20 +165,32 @@ function render() {
   }
 }
 
-function renderCart() {
+async function renderCart() {
   if (!els.cartItems) return
   let total = 0, count = 0
+  const skus = Object.keys(state.cart)
+  
+  // Buscar SKUs faltantes en la base de datos para el carrito
+  const missing = skus.filter(s => !state.catalogCache[s])
+  if (missing.length > 0 && !state.isFallback) {
+    const { data } = await supabase.from('products').select('*').in('sku', missing)
+    if (data) data.forEach(p => {
+      state.catalogCache[p.sku] = { sku: p.sku, name: p.name || p.sku, img: p.image_url, prices: { 'Mayorista': p.price_mayorista || 0, 'Especial Mayorista': p.price_especial || 0, 'Súper Especial': p.price_super || 0, 'Distribuidor': p.price_distribuidor || 0 } }
+    })
+  }
+
   const html = Object.entries(state.cart).map(([sku, qty]) => {
-    const p = state.products.find(x => x.sku === sku)
+    const p = state.catalogCache[sku]
     if (!p) return ''
     const pr = p.prices[state.tier] || p.prices['Mayorista'] || 0
     total += pr * qty; count += qty
     return `<div style="display:flex; gap:10px; padding:10px; border-bottom:1px solid var(--line); font-size:12px;">
       <img src="${p.img || '/logo.png'}" style="width:40px; height:40px; object-fit:contain; background:white;">
       <div style="flex:1;"><b>${p.name}</b><br><span style="color:var(--accent); font-weight:800;">${qty} x ${ARS.format(pr)}</span></div>
-      <button onclick="window.modQty('${sku}', -999)" style="background:none; border:none; cursor:pointer;">&times;</button>
+      <button onclick="window.modQty('${sku}', -999)" style="background:none; border:none; cursor:pointer; font-size:18px;">&times;</button>
     </div>`
   }).join('')
+  
   els.cartItems.innerHTML = html || '<p style="text-align:center; padding:40px;">Vacío</p>'
   els.cartTotal.textContent = ARS.format(total)
   els.cartCount.textContent = count
@@ -216,20 +204,35 @@ function setupEvents() {
     else if (state.query.length > 2 && !state.isFallback) {
       const { data } = await supabase.from('products').select('*').or(`sku.ilike.%${state.query}%,name.ilike.%${state.query}%`).limit(50)
       if (data) {
-        state.products = data.map(p => ({ sku: p.sku, name: p.name || p.sku, img: p.image_url || '/logo.png', prices: { 'Mayorista': p.price_mayorista || 0, 'Especial Mayorista': p.price_especial || 0, 'Súper Especial': p.price_super || 0, 'Distribuidor': p.price_distribuidor || 0 } }))
+        state.products = data.map(p => {
+          const item = { sku: p.sku, name: p.name || p.sku, img: p.image_url || '/logo.png', prices: { 'Mayorista': p.price_mayorista || 0, 'Especial Mayorista': p.price_especial || 0, 'Súper Especial': p.price_super || 0, 'Distribuidor': p.price_distribuidor || 0 } }
+          state.catalogCache[p.sku] = item
+          return item
+        })
         state.hasMore = false; render()
       }
     } else { render() }
   }
 
   els.tierSelect.onchange = (e) => { state.tier = e.target.value; render(); renderCart(); }
-  $('btn-cart').onclick = () => els.cartDrawer.classList.add('show')
+  $('btn-cart').onclick = () => { els.cartDrawer.classList.add('show'); renderCart(); }
   $('btn-open-login').onclick = () => els.authModal.classList.add('show')
   
   $('btn-history').onclick = async () => {
     if (!state.user) return alert('Iniciá sesión')
     els.historyDrawer.classList.add('show')
     const { data } = await supabase.from('orders').select('*').eq('user_id', state.user.id).order('created_at', { ascending: false })
+    
+    // Pre-cargar nombres de productos del historial si no están en cache
+    const allSkusInHistory = [...new Set((data || []).flatMap(o => Object.keys(o.items)))]
+    const missing = allSkusInHistory.filter(s => !state.catalogCache[s])
+    if (missing.length > 0 && !state.isFallback) {
+       const { data: pData } = await supabase.from('products').select('*').in('sku', missing)
+       if (pData) pData.forEach(p => {
+         state.catalogCache[p.sku] = { sku: p.sku, name: p.name || p.sku, img: p.image_url, prices: { 'Mayorista': p.price_mayorista || 0, 'Especial Mayorista': p.price_especial || 0, 'Súper Especial': p.price_super || 0, 'Distribuidor': p.price_distribuidor || 0 } }
+       })
+    }
+
     $('history-content').innerHTML = (data || []).map(o => `
       <div class="history-card" style="padding:15px; border-bottom:1px solid var(--line);">
         <div style="display:flex; justify-content:space-between; align-items:start;">
@@ -245,7 +248,7 @@ function setupEvents() {
         <details style="margin-top:10px; font-size:12px; color:var(--muted);">
           <summary style="cursor:pointer; font-weight:700;">Ver detalle de productos</summary>
           <div style="padding-top:8px;">
-            ${Object.entries(o.items).map(([sku, q]) => `• ${q} x ${sku}<br>`).join('')}
+            ${Object.entries(o.items).map(([sku, q]) => `• ${q} x ${state.catalogCache[sku]?.name || sku}<br>`).join('')}
           </div>
         </details>
       </div>
@@ -261,10 +264,8 @@ function setupEvents() {
   })
 
   $('btn-do-login').onclick = async () => {
-    try {
-      const { error } = await supabase.auth.signInWithPassword({ email: $('login-email').value, password: $('login-pass').value })
-      if (error) throw error
-    } catch (e) { alert('Error: ' + e.message) }
+    const { error } = await supabase.auth.signInWithPassword({ email: $('login-email').value, password: $('login-pass').value })
+    if (error) alert('Error: ' + error.message)
   }
 
   $('btn-logout').onclick = async () => { await signOut(); location.reload(); }
@@ -272,7 +273,7 @@ function setupEvents() {
   $('btn-checkout').onclick = async () => {
     if (!state.user) return alert('Iniciá sesión')
     const total = Object.entries(state.cart).reduce((s, [sku, q]) => {
-      const p = state.products.find(x => x.sku === sku)
+      const p = state.catalogCache[sku]
       return s + ((p?.prices[state.tier] || 0) * q)
     }, 0)
     const { data, error } = await supabase.from('orders').insert({ user_id: state.user.id, total, items: state.cart }).select().single()
@@ -293,7 +294,13 @@ window.modQty = (sku, delta) => {
 window.deleteOrder = async (id) => { if (confirm('¿Eliminar?')) { await supabase.from('orders').delete().eq('id', id); $('btn-history').click(); } }
 window.reOpenOrder = async (id) => {
   const { data } = await supabase.from('orders').select('items').eq('id', id).single()
-  if (data) { state.cart = { ...state.cart, ...data.items }; renderCart(); render(); els.historyDrawer.classList.remove('show'); els.cartDrawer.classList.add('show'); }
+  if (data) { 
+    state.cart = { ...state.cart, ...data.items }; 
+    await renderCart(); 
+    render(); 
+    els.historyDrawer.classList.remove('show'); 
+    els.cartDrawer.classList.add('show'); 
+  }
 }
 
 async function renderAdminOrders() {
@@ -304,7 +311,7 @@ async function renderAdminOrders() {
         <tr style="border-bottom:1px solid var(--line);">
           <td style="padding:10px;"><b>${o.profiles?.full_name || 'Cliente'}</b></td>
           <td style="padding:10px;">${ARS.format(o.total)}</td>
-          <td style="padding:10px;"><details><summary style="cursor:pointer; color:var(--accent);">Items</summary>${Object.entries(o.items).map(([s,q])=>`• ${q}x ${s}<br>`).join('')}</details></td>
+          <td style="padding:10px;"><details><summary style="cursor:pointer; color:var(--accent);">Items</summary>${Object.entries(o.items).map(([s,q])=>`• ${q}x ${state.catalogCache[s]?.name || s}<br>`).join('')}</details></td>
         </tr>
       `).join('')}
     </table>
