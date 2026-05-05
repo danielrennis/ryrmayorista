@@ -207,15 +207,29 @@ function setupEvents() {
   
   $('btn-do-login').onclick = async () => {
     try {
-      const { data } = await login($('login-email').value, $('login-pass').value)
-      const { data: profile } = await supabase.from('profiles').select('*').eq('id', data.user.id).single()
+      const { data, error } = await login($('login-email').value, $('login-pass').value)
+      if (error) throw error
+      
+      // Intentamos traer el perfil
+      let { data: profile } = await supabase.from('profiles').select('*').eq('id', data.user.id).single()
+      
+      // Si no existe (porque el registro falló o se creó a mano), lo creamos ahora
+      if (!profile) {
+        const { data: newProfile } = await supabase.from('profiles').insert({ 
+          id: data.user.id, 
+          full_name: 'Usuario Manual', 
+          is_active: false 
+        }).select().single()
+        profile = newProfile
+      }
+
       if (profile && !profile.is_active) {
         $('login-form').classList.add('hidden'); $('activation-form').classList.remove('hidden');
         state.user = data.user
         return
       }
       location.reload()
-    } catch (e) { alert(e.message) }
+    } catch (e) { alert('Error al ingresar: ' + e.message) }
   }
 
   $('btn-do-register').onclick = async () => {

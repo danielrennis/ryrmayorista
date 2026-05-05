@@ -13,3 +13,4 @@ fb52ae690d2b66c87625b2b78d980c79eac8a8d4 002b42af334b6b2a368fa6e1a4fc81760924a7a
 cdaadd88dc019bb9204d6609e25286f3e1e5e28f 93634b8b8840159911d6bde40e2c45b97152f656 Hugo Daniel Rennis <hugodanielrennis@Mac-mini-de-Hugo.local> 1777940940 -0300	commit: Restore distributor visual logic with red borders and labels
 93634b8b8840159911d6bde40e2c45b97152f656 65f308b9456406930a32eb61aaa30de96f1ac7c4 Hugo Daniel Rennis <hugodanielrennis@Mac-mini-de-Hugo.local> 1777941133 -0300	commit: Update test phone number and fix activation logic
 65f308b9456406930a32eb61aaa30de96f1ac7c4 df4a80693cc31d70b5757e59407fed7e702a2e66 Hugo Daniel Rennis <hugodanielrennis@Mac-mini-de-Hugo.local> 1777941795 -0300	commit: Improve auth error messaging and handle rate limits
+df4a80693cc31d70b5757e59407fed7e702a2e66 965d17dec03abd7da8922c184eb4e95de9f63f81 Hugo Daniel Rennis <hugodanielrennis@Mac-mini-de-Hugo.local> 1777941896 -0300	commit: Improve auth error messaging and handle rate limits
