@@ -363,10 +363,17 @@ async function renderAdminUsers() {
 
 window.activateUser = async (uid) => {
   const code = $(`vcode-${uid}`).value
-  if (!code) return alert('Asigná un código')
-  // Solo asignamos el código, NO lo activamos, para que el cliente lo haga en su pantalla
-  await supabase.from('profiles').update({ verification_code: code }).eq('id', uid)
-  alert('Código asignado. Pasale el código "' + code + '" al cliente.'); 
+  if (!code) return alert('Ingresá un código primero')
+  
+  // Solo asignamos el código, NO lo activamos aún
+  const { error } = await supabase.from('profiles').update({ verification_code: code }).eq('id', uid)
+  
+  if (error) {
+    console.error('❌ Error al asignar código:', error)
+    return alert('Error al guardar en la base de datos: ' + error.message)
+  }
+  
+  alert('✅ Código "' + code + '" asignado con éxito. Ya podés pasárselo al cliente.'); 
   renderAdminUsers();
 }
 
