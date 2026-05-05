@@ -112,6 +112,11 @@ function render() {
     const imagePath = p.img || '/logo.png'
     const qty = state.cart[p.sku] || 0
     
+    // Lógica Distribuidor
+    const hasDistPrice = (p.prices['Distribuidor'] || 0) > 0
+    const cardClass = hasDistPrice ? 'card is-dist' : 'card'
+    const distBadge = hasDistPrice ? '<div class="dist-label">DISTRIBUIDOR</div>' : ''
+
     // Si no está logueado, ocultamos el precio y el botón de agregar
     const priceHtml = state.user 
       ? `<div class="price">${ARS.format(price)}</div>`
@@ -129,7 +134,8 @@ function render() {
       : `<button class="btn-add" style="background: var(--line); color: var(--muted);" onclick="document.getElementById('auth-modal').classList.add('show')">SOLICITAR ACCESO</button>`
 
     return `
-      <div class="card">
+      <div class="${cardClass}">
+        ${distBadge}
         <div class="img"><img src="${imagePath}" onerror="this.src='/logo.png'"></div>
         <div class="body">
           <div class="name">${p.name}</div>
