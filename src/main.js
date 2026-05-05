@@ -14,7 +14,7 @@ const state = {
   page: 0,
   pageSize: 50,
   hasMore: true,
-  isFallback: true // Iniciamos en modo fallback por defecto para velocidad
+  isFallback: true
 }
 
 const ARS = new Intl.NumberFormat('es-AR', {
@@ -48,21 +48,20 @@ function getEls() {
 
 // --- INITIALIZATION ---
 async function init() {
-  console.log('🏁 Iniciando App (JSON First)...')
   els = getEls()
   
   try {
     createIcons({ icons: { LayoutGrid, Clock, User, Search, ShoppingCart, LogOut, CheckCircle, ShieldCheck } })
   } catch (e) { console.warn('Lucide icon error', e) }
 
-  // 1. CARGA INSTANTÁNEA DESDE JSON
+  // 1. CARGA INSTANTÁNEA JSON (Con ordenamiento)
   await fetchJsonFallback()
   state.loading = false
   render()
   renderCart()
   setupEvents()
 
-  // 2. CONEXIÓN CON SUPABASE Y AUTH EN SEGUNDO PLANO
+  // 2. SUPABASE EN FONDO
   supabase.auth.onAuthStateChange(async (event, session) => {
     state.user = session?.user || null
     if (state.user) await fetchProfile(state.user.id)
@@ -71,15 +70,14 @@ async function init() {
     renderCart()
   })
 
-  // Intentamos "subir de nivel" a Supabase si responde rápido
+  // Intentamos Supabase tras 1 segundo para no trabar el render inicial
   setTimeout(async () => {
     const ok = await fetchProducts()
     if (ok) {
-      console.log('✅ Catálogo actualizado desde Supabase')
       state.isFallback = false
       render()
     }
-  }, 100)
+  }, 1000)
 }
 
 async function fetchProducts(append = false) {
@@ -98,7 +96,7 @@ async function fetchProducts(append = false) {
         'Súper Especial': p.price_super || 0,
         'Distribuidor': p.price_distribuidor || 0
       },
-      img: p.image_url
+      img: p.image_url || '/logo.png'
     }))
 
     if (append) state.products = [...state.products, ...mapped]
@@ -106,17 +104,21 @@ async function fetchProducts(append = false) {
 
     state.hasMore = mapped.length === state.pageSize
     return true
-  } catch (e) {
-    console.warn('Supabase fetch error (continuando con JSON):', e.message)
-    return false
-  }
+  } catch (e) { return false }
 }
 
 async function fetchJsonFallback() {
   try {
     const res = await fetch('/catalog.json')
     const json = await res.json()
-    const raw = json.products || json
+    let raw = json.products || json
+    
+    // ORDENAR: Por fecha de última compra (si existe) o alfabético
+    raw.sort((a, b) => {
+      if (a.lastBuy && b.lastBuy) return new Date(b.lastBuy) - new Date(a.lastBuy)
+      return a.sku > b.sku ? 1 : -1
+    })
+
     state.products = raw.map(p => ({
       sku: p.sku,
       name: p.name || p.sku,
@@ -153,7 +155,11 @@ function render() {
   const q = state.query.toLowerCase()
   const filtered = state.products.filter(p => (p.sku + p.name).toLowerCase().includes(q))
 
-  els.grid.innerHTML = filtered.slice(0, 100).map(p => {
+  // Si estamos en Fallback mostramos más cantidad para que no parezca vacío
+  const limit = state.isFallback ? 500 : (state.page + 1) * state.pageSize
+  const items = filtered.slice(0, limit)
+
+  els.grid.innerHTML = items.map(p => {
     const price = p.prices[state.tier] || p.prices['Mayorista'] || 0
     const qty = state.cart[p.sku] || 0
     const isDist = (p.prices['Distribuidor'] || 0) > 0
@@ -213,7 +219,7 @@ function setupEvents() {
     else if (state.query.length > 2 && !state.isFallback) {
       const { data } = await supabase.from('products').select('*').or(`sku.ilike.%${state.query}%,name.ilike.%${state.query}%`).limit(50)
       if (data) {
-        state.products = data.map(p => ({ sku: p.sku, name: p.name || p.sku, img: p.image_url, prices: { 'Mayorista': p.price_mayorista || 0, 'Especial Mayorista': p.price_especial || 0, 'Súper Especial': p.price_super || 0, 'Distribuidor': p.price_distribuidor || 0 } }))
+        state.products = data.map(p => ({ sku: p.sku, name: p.name || p.sku, img: p.image_url || '/logo.png', prices: { 'Mayorista': p.price_mayorista || 0, 'Especial Mayorista': p.price_especial || 0, 'Súper Especial': p.price_super || 0, 'Distribuidor': p.price_distribuidor || 0 } }))
         state.hasMore = false; render()
       }
     } else { render() }
