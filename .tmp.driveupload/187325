@@ -215,11 +215,14 @@ function setupEvents() {
       
       // Si no existe (porque el registro falló o se creó a mano), lo creamos ahora
       if (!profile) {
-        const { data: newProfile } = await supabase.from('profiles').insert({ 
+        const { data: newProfile, error: insError } = await supabase.from('profiles').insert({ 
           id: data.user.id, 
-          full_name: 'Usuario Manual', 
+          full_name: 'Usuario de Prueba', 
+          dni_cuit: '000', // Campo obligatorio para que no rebote
           is_active: false 
         }).select().single()
+        
+        if (insError) throw insError
         profile = newProfile
       }
 
