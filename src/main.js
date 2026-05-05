@@ -221,11 +221,15 @@ function setupEvents() {
   $('btn-do-register').onclick = async () => {
     try {
       const email = $('reg-email').value
-      const { data } = await supabase.auth.signUp({ email, password: $('reg-pass').value })
+      const { data, error } = await supabase.auth.signUp({ email, password: $('reg-pass').value })
+      if (error) throw error
       await supabase.from('profiles').insert({ id: data.user.id, full_name: $('reg-name').value, dni_cuit: $('reg-dni').value, phone: '' })
       $('register-form').classList.add('hidden'); $('activation-form').classList.remove('hidden');
       state.user = data.user
-    } catch (e) { alert(e.message) }
+    } catch (e) { 
+      console.error(e)
+      alert('Error al registrar: ' + e.message) 
+    }
   }
 
   $('btn-do-activate').onclick = async () => {
