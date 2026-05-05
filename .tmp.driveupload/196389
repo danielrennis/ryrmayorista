@@ -1,0 +1,13 @@
+.netlify
+.git
+node_modules
+*.php
+*.jpeg
+*.png
+*.html
+!dist/*
+!logo.png
+!obtenerimagen.jpeg
+!placeholder_no_image.webp
+!index.html
+!catalog.json
