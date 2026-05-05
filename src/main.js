@@ -135,9 +135,7 @@ function render() {
   if (!els.grid) return
   const q = state.query.toLowerCase()
   const filtered = state.products.filter(p => (p.sku + p.name).toLowerCase().includes(q))
-  const limit = state.isFallback ? 500 : (state.page + 1) * state.pageSize
-  
-  els.grid.innerHTML = filtered.slice(0, limit).map(p => {
+  els.grid.innerHTML = filtered.map(p => {
     const price = p.prices[state.tier] || p.prices['Mayorista'] || 0
     const qty = state.cart[p.sku] || 0
     const isDist = (p.prices['Distribuidor'] || 0) > 0
@@ -162,7 +160,7 @@ function render() {
     `
   }).join('')
 
-  if (state.hasMore && !state.isFallback) {
+  if (state.hasMore && !state.isFallback && state.query.length === 0) {
     els.grid.innerHTML += `<div style="grid-column:1/-1; text-align:center; padding:20px;"><button id="btn-load-more" class="tile" style="margin:0 auto; cursor:pointer; font-weight:800; padding:0 40px;">VER MÁS</button></div>`
     setTimeout(() => { if($('btn-load-more')) $('btn-load-more').onclick = window.loadMore }, 10)
   }
