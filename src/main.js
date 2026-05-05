@@ -14,7 +14,7 @@ const state = {
   page: 0,
   pageSize: 50,
   hasMore: true,
-  isFallback: false
+  isFallback: true // Iniciamos en modo fallback por defecto para velocidad
 }
 
 const ARS = new Intl.NumberFormat('es-AR', {
@@ -48,18 +48,21 @@ function getEls() {
 
 // --- INITIALIZATION ---
 async function init() {
-  console.log('🏁 Iniciando App...')
+  console.log('🏁 Iniciando App (JSON First)...')
   els = getEls()
   
-  if (els.grid) {
-    els.grid.innerHTML = '<div style="grid-column:1/-1; text-align:center; padding:50px; color:var(--muted); font-weight:700;">CARGANDO PRODUCTOS...</div>'
-  }
-
   try {
     createIcons({ icons: { LayoutGrid, Clock, User, Search, ShoppingCart, LogOut, CheckCircle, ShieldCheck } })
-  } catch (e) { console.error('Lucide error:', e) }
+  } catch (e) { console.warn('Lucide icon error', e) }
 
-  // Auth
+  // 1. CARGA INSTANTÁNEA DESDE JSON
+  await fetchJsonFallback()
+  state.loading = false
+  render()
+  renderCart()
+  setupEvents()
+
+  // 2. CONEXIÓN CON SUPABASE Y AUTH EN SEGUNDO PLANO
   supabase.auth.onAuthStateChange(async (event, session) => {
     state.user = session?.user || null
     if (state.user) await fetchProfile(state.user.id)
@@ -68,35 +71,22 @@ async function init() {
     renderCart()
   })
 
-  // Carga con tiempo límite para que no se trabe
-  const loadSupabase = fetchProducts()
-  const timeout = new Promise(res => setTimeout(() => res('timeout'), 5000))
-
-  const result = await Promise.race([loadSupabase, timeout])
-
-  if (result === 'timeout' || state.products.length === 0) {
-    console.warn('⚡ Supabase lento o vacío, usando JSON local...')
-    await fetchJsonFallback()
-  }
-  
-  state.loading = false
-  console.log('✅ App lista')
-  render()
-  renderCart()
-  setupEvents()
+  // Intentamos "subir de nivel" a Supabase si responde rápido
+  setTimeout(async () => {
+    const ok = await fetchProducts()
+    if (ok) {
+      console.log('✅ Catálogo actualizado desde Supabase')
+      state.isFallback = false
+      render()
+    }
+  }, 100)
 }
 
 async function fetchProducts(append = false) {
   try {
     const from = state.page * state.pageSize
     const to = from + state.pageSize - 1
-
-    const { data, error } = await supabase
-      .from('products')
-      .select('*')
-      .order('updated_at', { ascending: false })
-      .range(from, to)
-
+    const { data, error } = await supabase.from('products').select('*').order('updated_at', { ascending: false }).range(from, to)
     if (error) throw error
     
     const mapped = (data || []).map(p => ({
@@ -115,10 +105,9 @@ async function fetchProducts(append = false) {
     else state.products = mapped
 
     state.hasMore = mapped.length === state.pageSize
-    state.isFallback = false
     return true
   } catch (e) {
-    console.error('Fetch error:', e)
+    console.warn('Supabase fetch error (continuando con JSON):', e.message)
     return false
   }
 }
@@ -136,7 +125,7 @@ async function fetchJsonFallback() {
     }))
     state.hasMore = false
     state.isFallback = true
-  } catch (e) { console.error('Fallback fail:', e) }
+  } catch (e) { console.error('JSON failure:', e) }
 }
 
 async function fetchProfile(uid) {
@@ -150,11 +139,11 @@ async function fetchProfile(uid) {
 function updateAuthUi() {
   if (!els.loggedUi) return
   if (state.user) {
-    els.unloggedUi.classList.add('hidden'); els.loggedUi.classList.remove('hidden');
+    els.unloggedUi.classList.add('hidden'); els.loggedUi.classList.remove('hidden')
     els.userEmail.textContent = state.user.email
     if (state.profile?.is_admin) els.adminBtn.classList.remove('hidden')
   } else {
-    els.unloggedUi.classList.remove('hidden'); els.loggedUi.classList.add('hidden');
+    els.unloggedUi.classList.remove('hidden'); els.loggedUi.classList.add('hidden')
     els.adminBtn.classList.add('hidden')
   }
 }
@@ -164,7 +153,7 @@ function render() {
   const q = state.query.toLowerCase()
   const filtered = state.products.filter(p => (p.sku + p.name).toLowerCase().includes(q))
 
-  els.grid.innerHTML = filtered.map(p => {
+  els.grid.innerHTML = filtered.slice(0, 100).map(p => {
     const price = p.prices[state.tier] || p.prices['Mayorista'] || 0
     const qty = state.cart[p.sku] || 0
     const isDist = (p.prices['Distribuidor'] || 0) > 0
@@ -175,24 +164,25 @@ function render() {
         <div class="img"><img src="${p.img || '/logo.png'}" onerror="this.src='/logo.png'"></div>
         <div class="body">
           <div class="name">${p.name}</div>
-          ${state.user ? `<div class="price">${ARS.format(price)}</div>` : `<div class="price" onclick="$('auth-modal').classList.add('show')" style="cursor:pointer; font-size:12px; color:var(--muted);">Ver precios</div>`}
-          ${state.user ? `
-            <div class="controls">
+          ${state.user ? `<div class="price">${ARS.format(price)}</div>` : `<div class="price" style="font-size:12px; color:var(--muted); cursor:pointer;" onclick="$('auth-modal').classList.add('show')">Ingresá para ver precios</div>`}
+          <div class="controls">
+            ${state.user ? `
               <div class="qty-box">
                 <button class="qty-btn" onclick="window.modQty('${p.sku}', -1)">-</button>
                 <span class="qty-val">${qty}</span>
                 <button class="qty-btn" onclick="window.modQty('${p.sku}', 1)">+</button>
               </div>
               <button class="btn-add" onclick="window.modQty('${p.sku}', 1)">SUMAR</button>
-            </div>` : `<button class="btn-add" onclick="$('auth-modal').classList.add('show')">INGRESAR</button>`}
+            ` : `<button class="btn-add" onclick="$('auth-modal').classList.add('show')">INGRESAR</button>`}
+          </div>
         </div>
       </div>
     `
   }).join('')
 
-  if (state.hasMore) {
+  if (state.hasMore && !state.isFallback) {
     els.grid.innerHTML += `<div style="grid-column:1/-1; text-align:center; padding:20px;"><button id="btn-load-more" class="tile" style="margin:0 auto; cursor:pointer; font-weight:800; padding:0 40px;">VER MÁS</button></div>`
-    setTimeout(() => { if($('btn-load-more')) $('btn-load-more').onclick = window.loadMore }, 50)
+    setTimeout(() => { if($('btn-load-more')) $('btn-load-more').onclick = window.loadMore }, 10)
   }
 }
 
