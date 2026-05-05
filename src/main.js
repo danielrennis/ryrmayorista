@@ -237,6 +237,11 @@ function setupEvents() {
     } else { alert('Código incorrecto') }
   }
 
+  $('btn-wa-emanuel').onclick = () => {
+    const text = `Hola! Me registré en la web y necesito mi código de activación.`
+    window.open(`https://wa.me/5493624250452?text=${encodeURIComponent(text)}`, '_blank')
+  }
+
   $('btn-logout').onclick = async () => { await signOut(); location.reload(); }
 
   $('btn-checkout').onclick = async () => {
@@ -248,7 +253,7 @@ function setupEvents() {
     const { data, error } = await supabase.from('orders').insert({ user_id: state.user.id, total, items: state.cart }).select().single()
     if (error) return alert(error.message)
     alert('Pedido confirmado! Avisale a Emanuel por WhatsApp.')
-    window.open(`https://wa.me/5493624996333?text=Confirmé el pedido #${data.id.slice(0,6)}`, '_blank')
+    window.open(`https://wa.me/5493624250452?text=Confirmé el pedido #${data.id.slice(0,6)}`, '_blank')
     state.cart = {}
     renderCart()
     render()
