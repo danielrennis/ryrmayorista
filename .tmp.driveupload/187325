@@ -252,8 +252,13 @@ function setupEvents() {
     }, 0)
     const { data, error } = await supabase.from('orders').insert({ user_id: state.user.id, total, items: state.cart }).select().single()
     if (error) return alert(error.message)
-    window.open(`https://wa.me/5493624250452?text=${encodeURIComponent(`Pedido #${data.id.slice(0,6)} por ${ARS.format(total)}`)}`, '_blank')
-    state.cart = {}; renderCart(); render();
+    window.open(`https://wa.me/5493624250452?text=${encodeURIComponent(`Soy ${state.profile?.full_name || state.user.email}. Confirmé el pedido #${data.id.slice(0,6)} por ${ARS.format(total)}`)}`, '_blank')
+    
+    state.cart = {}
+    renderCart()
+    render()
+    els.cartDrawer.classList.remove('show')
+    alert('✅ ¡Pedido enviado con éxito! Ya podés verlo en tu historial.')
   }
 }
 
