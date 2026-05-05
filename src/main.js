@@ -215,10 +215,12 @@ function setupEvents() {
     } else { render() }
   }
 
-  els.tierSelect.onchange = (e) => { state.tier = e.target.value; render(); renderCart(); }
-  $('btn-cart').onclick = () => { els.cartDrawer.classList.add('show'); renderCart(); }
   $('btn-open-login').onclick = () => els.authModal.classList.add('show')
   
+  // Navegación interna del Login/Registro
+  $('go-register').onclick = (e) => { e.preventDefault(); $('login-form').classList.add('hidden'); $('register-form').classList.remove('hidden'); }
+  $('go-login').onclick = (e) => { e.preventDefault(); $('register-form').classList.add('hidden'); $('login-form').classList.remove('hidden'); }
+
   $('btn-history').onclick = async () => {
     if (!state.user) return alert('Iniciá sesión')
     els.historyDrawer.classList.add('show')
@@ -267,6 +269,21 @@ function setupEvents() {
   $('btn-do-login').onclick = async () => {
     const { error } = await supabase.auth.signInWithPassword({ email: $('login-email').value, password: $('login-pass').value })
     if (error) alert('Error: ' + error.message)
+  }
+
+  $('btn-do-register').onclick = async () => {
+    const email = $('reg-email').value
+    const pass = $('reg-pass').value
+    const name = $('reg-name').value
+    const dni = $('reg-dni').value
+    if (!email || !pass || !name) return alert('Completá todos los campos')
+    
+    const { data, error } = await signUp(email, pass, { full_name: name, dni_cuit: dni })
+    if (error) return alert(error.message)
+    
+    alert('✅ Solicitud enviada. Pedile tu código de activación a Emanuel.')
+    $('register-form').classList.add('hidden')
+    $('activation-form').classList.remove('hidden')
   }
 
   $('btn-logout').onclick = async () => { await signOut(); location.reload(); }
