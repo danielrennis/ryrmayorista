@@ -157,12 +157,13 @@ function renderCart() {
     total += price * qty
     count += qty
     return `
-      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; padding:10px; border-bottom:1px solid var(--line);">
-        <div>
-          <div style="font-weight:700; font-size:14px;">${p.name}</div>
-          <div style="color:var(--accent); font-weight:800;">${qty} x ${ARS.format(price)}</div>
+      <div style="display:flex; gap:12px; align-items:center; margin-bottom:12px; padding:10px; border-bottom:1px solid var(--line);">
+        <img src="${p.img || '/logo.png'}" style="width:50px; height:50px; object-fit:contain; border-radius:8px; border:1px solid var(--line); background:white;">
+        <div style="flex:1;">
+          <div style="font-weight:700; font-size:13px;">${p.name}</div>
+          <div style="color:var(--accent); font-weight:800; font-size:14px;">${qty} x ${ARS.format(price)}</div>
         </div>
-        <button onclick="window.modQty('${sku}', -999)" style="background:none; border:none; cursor:pointer; color:var(--muted);">&times;</button>
+        <button onclick="window.modQty('${sku}', -999)" style="background:none; border:none; cursor:pointer; color:var(--muted); font-size:20px;">&times;</button>
       </div>
     `
   }).join('')
@@ -184,12 +185,35 @@ function setupEvents() {
     if (!state.user) return alert('Iniciá sesión para ver tus pedidos')
     els.historyDrawer.classList.add('show')
     const { data } = await supabase.from('orders').select('*').eq('user_id', state.user.id).order('created_at', { ascending: false })
-    $('history-content').innerHTML = (data || []).map(o => `
-      <div style="padding:15px; border-bottom:1px solid var(--line); display:flex; justify-content:space-between;">
-        <div><b>Pedido #${o.id.slice(0,6)}</b><br><small>${new Date(o.created_at).toLocaleDateString()}</small></div>
-        <div style="font-weight:800; color:var(--accent);">${ARS.format(o.total)}</div>
-      </div>
-    `).join('')
+    $('history-content').innerHTML = (data || []).map(o => {
+      const itemsCount = Object.values(o.items).reduce((a,b) => a+b, 0)
+      return `
+        <div class="history-card" style="padding:15px; border-bottom:1px solid var(--line); position:relative;">
+          <div style="display:flex; justify-content:space-between; align-items:start;">
+            <div>
+              <b>Pedido #${o.id.slice(0,6)}</b><br>
+              <small>${new Date(o.created_at).toLocaleDateString()} - ${itemsCount} items</small>
+            </div>
+            <div style="text-align:right;">
+              <div style="font-weight:800; color:var(--accent); font-size:18px;">${ARS.format(o.total)}</div>
+              <div style="display:flex; gap:10px; margin-top:8px; justify-content:flex-end;">
+                <button class="btn-ghost" onclick="window.reOpenOrder('${o.id}')" title="Re-editar" style="padding:4px 8px; font-size:11px;">RE-EDITAR</button>
+                <button class="btn-ghost" onclick="window.deleteOrder('${o.id}')" title="Eliminar" style="padding:4px 8px; font-size:11px; color:red;">BORRAR</button>
+              </div>
+            </div>
+          </div>
+          <details style="margin-top:10px; font-size:12px; color:var(--muted);">
+            <summary style="cursor:pointer; font-weight:700;">Ver detalle de productos</summary>
+            <div style="padding-top:8px;">
+              ${Object.entries(o.items).map(([sku, q]) => {
+                const p = state.products.find(x => x.sku === sku)
+                return `• ${q} x ${p ? p.name : sku}<br>`
+              }).join('')}
+            </div>
+          </details>
+        </div>
+      `
+    }).join('')
   }
 
   // Close drawers
@@ -290,6 +314,25 @@ function setupEvents() {
     state.cart = {}
     renderCart()
     render()
+  }
+}
+
+window.deleteOrder = async (id) => {
+  if (!confirm('¿Seguro querés eliminar este pedido?')) return
+  const { error } = await supabase.from('orders').delete().eq('id', id)
+  if (error) return alert(error.message)
+  $('btn-history').click() // Refresh
+}
+
+window.reOpenOrder = async (id) => {
+  if (!confirm('Esto cargará los productos del pedido en tu carrito actual. ¿Continuar?')) return
+  const { data } = await supabase.from('orders').select('items').eq('id', id).single()
+  if (data) {
+    state.cart = { ...state.cart, ...data.items }
+    renderCart()
+    render()
+    els.historyDrawer.classList.remove('show')
+    els.cartDrawer.classList.add('show')
   }
 }
 
