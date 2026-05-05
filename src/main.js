@@ -207,18 +207,26 @@ function setupEvents() {
   
   $('btn-do-login').onclick = async () => {
     try {
-      const { data, error } = await login($('login-email').value, $('login-pass').value)
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email: $('login-email').value,
+        password: $('login-pass').value
+      })
+      
       if (error) throw error
-      
+      if (!data || !data.user) throw new Error('No se pudo recuperar la información del usuario.')
+
+      // Guardamos en el estado
+      state.user = data.user
+
       // Intentamos traer el perfil
-      let { data: profile } = await supabase.from('profiles').select('*').eq('id', data.user.id).single()
+      let { data: profile, error: profError } = await supabase.from('profiles').select('*').eq('id', data.user.id).maybeSingle()
       
-      // Si no existe (porque el registro falló o se creó a mano), lo creamos ahora
+      // Si no existe, lo creamos
       if (!profile) {
         const { data: newProfile, error: insError } = await supabase.from('profiles').insert({ 
           id: data.user.id, 
-          full_name: 'Usuario de Prueba', 
-          dni_cuit: '000', // Campo obligatorio para que no rebote
+          full_name: 'Usuario Nuevo', 
+          dni_cuit: '000',
           is_active: false 
         }).select().single()
         
@@ -226,13 +234,17 @@ function setupEvents() {
         profile = newProfile
       }
 
+      state.profile = profile
+
       if (profile && !profile.is_active) {
         $('login-form').classList.add('hidden'); $('activation-form').classList.remove('hidden');
-        state.user = data.user
         return
       }
       location.reload()
-    } catch (e) { alert('Error al ingresar: ' + e.message) }
+    } catch (e) { 
+      console.error('Error detallado:', e)
+      alert('Error al ingresar: ' + (e.message || 'Error desconocido')) 
+    }
   }
 
   $('btn-do-register').onclick = async () => {
