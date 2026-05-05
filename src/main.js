@@ -293,11 +293,17 @@ function setupEvents() {
   $('btn-do-activate').onclick = async () => {
     const code = $('activate-code').value
     if (!code) return alert('Ingresá el código')
+    
+    // Verificamos si el código coincide
     const { data, error } = await supabase.from('profiles').select('*').eq('id', state.user.id).eq('verification_code', code).maybeSingle()
-    if (error || !data) return alert('Código incorrecto. Verificá con Emanuel.')
+    
+    if (error || !data) return alert('Código incorrecto. Pedile el código correcto a Emanuel.')
+    
+    // Si coincide, lo activamos
     const { error: upErr } = await supabase.from('profiles').update({ is_active: true }).eq('id', state.user.id)
     if (upErr) return alert(upErr.message)
-    alert('🎉 ¡Cuenta activada con éxito!')
+    
+    alert('🎉 ¡Cuenta activada! Ya podés ver los precios y comprar.')
     location.reload()
   }
 
@@ -347,8 +353,10 @@ async function renderAdminUsers() {
 window.activateUser = async (uid) => {
   const code = $(`vcode-${uid}`).value
   if (!code) return alert('Asigná un código')
-  await supabase.from('profiles').update({ verification_code: code, is_active: true }).eq('id', uid)
-  alert('Activado!'); renderAdminUsers();
+  // Solo asignamos el código, NO lo activamos, para que el cliente lo haga en su pantalla
+  await supabase.from('profiles').update({ verification_code: code }).eq('id', uid)
+  alert('Código asignado. Pasale el código "' + code + '" al cliente.'); 
+  renderAdminUsers();
 }
 
 init()
