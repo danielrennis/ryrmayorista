@@ -264,10 +264,23 @@ function setupEvents() {
   $('btn-do-register').onclick = async () => {
     const email = $('reg-email').value, pass = $('reg-pass').value, name = $('reg-name').value, dni = $('reg-dni').value
     if (!email || !pass || !name) return alert('Completá todos los campos')
-    const { error } = await signUp(email, pass, { full_name: name, dni_cuit: dni })
-    if (error) return alert(error.message)
-    alert('✅ Solicitud enviada. Pedile tu código de activación a Emanuel.')
-    showAuthForm('activation-form')
+    
+    const btn = $('btn-do-register')
+    const oldText = btn.textContent
+    btn.textContent = 'PROCESANDO...'
+    btn.disabled = true
+
+    try {
+      const { error } = await signUp(email, pass, { full_name: name, dni_cuit: dni })
+      if (error) throw error
+      alert('✅ Solicitud enviada. Pedile tu código de activación a Emanuel.')
+      showAuthForm('activation-form')
+    } catch (e) {
+      alert('Error: ' + e.message)
+    } finally {
+      btn.textContent = oldText
+      btn.disabled = false
+    }
   }
 
   $('btn-do-activate').onclick = async () => {
