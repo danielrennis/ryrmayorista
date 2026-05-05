@@ -272,9 +272,12 @@ function setupEvents() {
 
     try {
       console.log('🚀 Intentando registro para:', email)
-      const res = await signUp(email, pass, { full_name: name, dni_cuit: dni })
-      console.log('✅ Respuesta Supabase:', res)
       
+      // Timeout de seguridad de 10 segundos
+      const timeout = new Promise((_, reject) => setTimeout(() => reject(new Error('Tiempo de espera agotado. Verificá si el usuario se creó en el panel.')), 10000))
+      const res = await Promise.race([signUp(email, pass, { full_name: name, dni_cuit: dni }), timeout])
+      
+      console.log('✅ Respuesta Supabase:', res)
       alert('✅ Solicitud enviada. Pedile tu código de activación a Emanuel.')
       showAuthForm('activation-form')
     } catch (e) {
