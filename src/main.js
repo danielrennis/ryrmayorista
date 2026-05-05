@@ -324,14 +324,33 @@ function setupEvents() {
 
   $('btn-checkout').onclick = async () => {
     if (!state.user) return alert('Iniciá sesión')
+    if (Object.keys(state.cart).length === 0) return alert('El carrito está vacío')
+    
     const total = Object.entries(state.cart).reduce((s, [sku, q]) => {
       const p = state.catalogCache[sku]
       return s + ((p?.prices[state.tier] || 0) * q)
     }, 0)
-    const { data, error } = await supabase.from('orders').insert({ user_id: state.user.id, total, items: state.cart }).select().single()
-    if (error) return alert(error.message)
-    window.open(`https://api.whatsapp.com/send?phone=5493624250452&text=${encodeURIComponent(`Soy ${state.profile?.full_name || 'Cliente'}. Confirmé el pedido #${data.id.slice(0,6)} por ${ARS.format(total)}`)}`, '_blank')
-    state.cart = {}; renderCart(); render(); els.cartDrawer.classList.remove('show'); setTimeout(()=>alert('✅ Pedido guardado y enviado!'), 500);
+    
+    const { data, error } = await supabase.from('orders').insert({ 
+      user_id: state.user.id, 
+      total, 
+      items: state.cart 
+    }).select().single()
+    
+    if (error) {
+      console.error('❌ Error al guardar pedido:', error)
+      return alert('Error al guardar pedido: ' + error.message)
+    }
+    
+    const waUrl = `https://api.whatsapp.com/send?phone=5493624250452&text=${encodeURIComponent(`Soy ${state.profile?.full_name || 'Cliente'}. Confirmé el pedido #${data.id.slice(0,6)} por ${ARS.format(total)}`)}`
+    
+    window.open(waUrl, '_blank')
+    
+    state.cart = {}
+    renderCart()
+    render()
+    els.cartDrawer.classList.remove('show')
+    setTimeout(() => alert('✅ ¡Pedido guardado y enviado a WhatsApp!'), 500)
   }
 }
 
@@ -350,8 +369,20 @@ window.reOpenOrder = async (id) => {
 }
 
 async function renderAdminOrders() {
-  const { data } = await supabase.from('orders').select('*, profiles(full_name)').order('created_at', { ascending: false })
-  els.adminContent.innerHTML = `<table style="width:100%; font-size:12px; border-collapse:collapse;">${(data || []).map(o => `<tr style="border-bottom:1px solid var(--line);"><td style="padding:10px;"><b>${o.profiles?.full_name || 'Cliente'}</b></td><td style="padding:10px;">${ARS.format(o.total)}</td><td style="padding:10px;"><details><summary style="cursor:pointer; color:var(--accent);">Items</summary>${Object.entries(o.items).map(([s,q])=>`• ${q}x ${state.catalogCache[s]?.name || s}<br>`).join('')}</details></td></tr>`).join('')}</table>`
+  const { data, error } = await supabase.from('orders').select('*, profiles(full_name)').order('created_at', { ascending: false })
+  if (error) return els.adminContent.innerHTML = `<p>Error: ${error.message}</p>`
+  
+  els.adminContent.innerHTML = `<table style="width:100%; font-size:12px; border-collapse:collapse;">${(data || []).map(o => `
+    <tr style="border-bottom:1px solid var(--line);">
+      <td style="padding:10px;"><b>${o.profiles?.full_name || 'Sin Nombre'}</b><br><small>${new Date(o.created_at).toLocaleDateString()}</small></td>
+      <td style="padding:10px;">${ARS.format(o.total)}</td>
+      <td style="padding:10px;">
+        <details>
+          <summary style="cursor:pointer; color:var(--accent);">Items</summary>
+          <div style="padding:5px;">${Object.entries(o.items).map(([s,q]) => `• ${q}x ${state.catalogCache[s]?.name || s}<br>`).join('')}</div>
+        </details>
+      </td>
+    </tr>`).join('')}</table>`
 }
 
 async function renderAdminUsers() {
