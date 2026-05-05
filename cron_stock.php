@@ -162,12 +162,17 @@ foreach ($chunks as $chunk) {
 }
 echo PHP_EOL . "Sincronización Supabase finalizada." . PHP_EOL;
 
-// --- SINCRONIZACIÓN CON GITHUB (Para actualizar el JSON de respaldo en la web) ---
-echo "Subiendo catalog.json al repositorio..." . PHP_EOL;
-shell_exec("git add public/catalog.json"); // Aseguramos que apunte a public/
-shell_exec("git commit -m 'Cron: Actualización automática de stock y precios'");
-$push_output = shell_exec("git push origin main 2>&1");
-echo $push_output . PHP_EOL;
+// --- SINCRONIZACIÓN CON GITHUB (Opcional) ---
+$git_check = shell_exec("git --version");
+if ($git_check) {
+    echo "Subiendo catalog.json al repositorio..." . PHP_EOL;
+    shell_exec("git add public/catalog.json");
+    shell_exec("git commit -m 'Cron: Actualización automática'");
+    $push_output = shell_exec("git push origin main 2>&1");
+    echo $push_output . PHP_EOL;
+} else {
+    echo "Aviso: Git no está instalado en esta PC. El respaldo JSON en la web no se actualizará, pero Supabase ya está al día." . PHP_EOL;
+}
 
 // --- FIN DEL PROCESO ---
 echo PHP_EOL . "Proceso finalizado a las: " . date('H:i:s') . PHP_EOL;
