@@ -54,14 +54,14 @@ async function init() {
     createIcons({ icons: { LayoutGrid, Clock, User, Search, ShoppingCart, LogOut, CheckCircle, ShieldCheck } })
   } catch (e) { console.warn('Lucide icon error', e) }
 
-  // 1. CARGA INSTANTÁNEA JSON (Con ordenamiento)
+  // 1. CARGA INSTANTÁNEA JSON
   await fetchJsonFallback()
   state.loading = false
   render()
   renderCart()
   setupEvents()
 
-  // 2. SUPABASE EN FONDO
+  // 2. SUPABASE Y AUTH EN FONDO
   supabase.auth.onAuthStateChange(async (event, session) => {
     state.user = session?.user || null
     if (state.user) await fetchProfile(state.user.id)
@@ -70,7 +70,6 @@ async function init() {
     renderCart()
   })
 
-  // Intentamos Supabase tras 1 segundo para no trabar el render inicial
   setTimeout(async () => {
     const ok = await fetchProducts()
     if (ok) {
@@ -112,8 +111,6 @@ async function fetchJsonFallback() {
     const res = await fetch('/catalog.json')
     const json = await res.json()
     let raw = json.products || json
-    
-    // ORDENAR: Por fecha de última compra (descendente)
     raw.sort((a, b) => {
       const dateA = a.lastBuy ? new Date(a.lastBuy) : new Date(0)
       const dateB = b.lastBuy ? new Date(b.lastBuy) : new Date(0)
@@ -156,7 +153,6 @@ function render() {
   const q = state.query.toLowerCase()
   const filtered = state.products.filter(p => (p.sku + p.name).toLowerCase().includes(q))
 
-  // Si estamos en Fallback mostramos más cantidad para que no parezca vacío
   const limit = state.isFallback ? 500 : (state.page + 1) * state.pageSize
   const items = filtered.slice(0, limit)
 
@@ -229,7 +225,36 @@ function setupEvents() {
   els.tierSelect.onchange = (e) => { state.tier = e.target.value; render(); renderCart(); }
   $('btn-cart').onclick = () => els.cartDrawer.classList.add('show')
   $('btn-open-login').onclick = () => els.authModal.classList.add('show')
+  
+  $('btn-history').onclick = async () => {
+    if (!state.user) return alert('Iniciá sesión')
+    els.historyDrawer.classList.add('show')
+    const { data } = await supabase.from('orders').select('*').eq('user_id', state.user.id).order('created_at', { ascending: false })
+    $('history-content').innerHTML = (data || []).map(o => `
+      <div class="history-card" style="padding:15px; border-bottom:1px solid var(--line);">
+        <div style="display:flex; justify-content:space-between; align-items:start;">
+          <div><b>Pedido #${o.id.slice(0,6)}</b><br><small>${new Date(o.created_at).toLocaleDateString()}</small></div>
+          <div style="text-align:right;">
+            <div style="font-weight:800; color:var(--accent);">${ARS.format(o.total)}</div>
+            <div style="display:flex; gap:10px; margin-top:8px; justify-content:flex-end;">
+              <button class="btn-ghost" onclick="window.reOpenOrder('${o.id}')" style="padding:4px 8px; font-size:11px;">RE-EDITAR</button>
+              <button class="btn-ghost" onclick="window.deleteOrder('${o.id}')" style="padding:4px 8px; font-size:11px; color:red;">BORRAR</button>
+            </div>
+          </div>
+        </div>
+        <details style="margin-top:10px; font-size:12px; color:var(--muted);">
+          <summary style="cursor:pointer; font-weight:700;">Ver detalle de productos</summary>
+          <div style="padding-top:8px;">
+            ${Object.entries(o.items).map(([sku, q]) => `• ${q} x ${sku}<br>`).join('')}
+          </div>
+        </details>
+      </div>
+    `).join('') || '<p style="text-align:center; padding:20px;">No hay pedidos</p>'
+  }
+
   els.adminBtn.onclick = () => { els.adminDrawer.classList.add('show'); renderAdminOrders(); }
+  $('admin-tab-orders').onclick = () => { $('admin-tab-orders').classList.add('primary'); $('admin-tab-users').classList.remove('primary'); renderAdminOrders(); }
+  $('admin-tab-users').onclick = () => { $('admin-tab-users').classList.add('primary'); $('admin-tab-orders').classList.remove('primary'); renderAdminUsers(); }
 
   document.querySelectorAll('.btn-close, .mask').forEach(b => {
     b.onclick = () => { els.cartDrawer.classList.remove('show'); els.authModal.classList.remove('show'); els.historyDrawer.classList.remove('show'); els.adminDrawer.classList.remove('show'); }
@@ -252,13 +277,8 @@ function setupEvents() {
     }, 0)
     const { data, error } = await supabase.from('orders').insert({ user_id: state.user.id, total, items: state.cart }).select().single()
     if (error) return alert(error.message)
-    window.open(`https://wa.me/5493624250452?text=${encodeURIComponent(`Soy ${state.profile?.full_name || state.user.email}. Confirmé el pedido #${data.id.slice(0,6)} por ${ARS.format(total)}`)}`, '_blank')
-    
-    state.cart = {}
-    renderCart()
-    render()
-    els.cartDrawer.classList.remove('show')
-    alert('✅ ¡Pedido enviado con éxito! Ya podés verlo en tu historial.')
+    window.open(`https://wa.me/5493624250452?text=${encodeURIComponent(`Soy ${state.profile?.full_name || 'Cliente'}. Pedido #${data.id.slice(0,6)} por ${ARS.format(total)}`)}`, '_blank')
+    state.cart = {}; renderCart(); render(); els.cartDrawer.classList.remove('show'); alert('✅ Pedido enviado!');
   }
 }
 
@@ -270,9 +290,45 @@ window.modQty = (sku, delta) => {
   renderCart(); render();
 }
 
+window.deleteOrder = async (id) => { if (confirm('¿Eliminar?')) { await supabase.from('orders').delete().eq('id', id); $('btn-history').click(); } }
+window.reOpenOrder = async (id) => {
+  const { data } = await supabase.from('orders').select('items').eq('id', id).single()
+  if (data) { state.cart = { ...state.cart, ...data.items }; renderCart(); render(); els.historyDrawer.classList.remove('show'); els.cartDrawer.classList.add('show'); }
+}
+
 async function renderAdminOrders() {
   const { data } = await supabase.from('orders').select('*, profiles(full_name)').order('created_at', { ascending: false })
-  els.adminContent.innerHTML = (data || []).map(o => `<div style="padding:10px; border-bottom:1px solid var(--line);"><b>${o.profiles?.full_name}</b> - ${ARS.format(o.total)}</div>`).join('')
+  els.adminContent.innerHTML = `
+    <table style="width:100%; font-size:12px; border-collapse:collapse;">
+      ${(data || []).map(o => `
+        <tr style="border-bottom:1px solid var(--line);">
+          <td style="padding:10px;"><b>${o.profiles?.full_name || 'Cliente'}</b></td>
+          <td style="padding:10px;">${ARS.format(o.total)}</td>
+          <td style="padding:10px;"><details><summary style="cursor:pointer; color:var(--accent);">Items</summary>${Object.entries(o.items).map(([s,q])=>`• ${q}x ${s}<br>`).join('')}</details></td>
+        </tr>
+      `).join('')}
+    </table>
+  `
+}
+
+async function renderAdminUsers() {
+  const { data } = await supabase.from('profiles').select('*').eq('is_active', false)
+  els.adminContent.innerHTML = (data || []).map(u => `
+    <div class="tile" style="height:auto; padding:15px; flex-direction:column; align-items:start; gap:10px;">
+      <b>${u.full_name}</b> (${u.dni_cuit})
+      <div style="display:flex; gap:10px; width:100%;">
+        <input id="vcode-${u.id}" placeholder="Código" class="auth-btn" style="flex:1; height:32px;">
+        <button class="btn-add" onclick="window.activateUser('${u.id}')" style="height:32px;">ACTIVAR</button>
+      </div>
+    </div>
+  `).join('') || '<p>No hay clientes pendientes</p>'
+}
+
+window.activateUser = async (uid) => {
+  const code = $(`vcode-${uid}`).value
+  if (!code) return alert('Asigná un código')
+  await supabase.from('profiles').update({ verification_code: code, is_active: true }).eq('id', uid)
+  alert('Activado!'); renderAdminUsers();
 }
 
 init()
