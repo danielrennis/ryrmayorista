@@ -271,12 +271,15 @@ function setupEvents() {
     btn.disabled = true
 
     try {
-      const { error } = await signUp(email, pass, { full_name: name, dni_cuit: dni })
-      if (error) throw error
+      console.log('🚀 Intentando registro para:', email)
+      const res = await signUp(email, pass, { full_name: name, dni_cuit: dni })
+      console.log('✅ Respuesta Supabase:', res)
+      
       alert('✅ Solicitud enviada. Pedile tu código de activación a Emanuel.')
       showAuthForm('activation-form')
     } catch (e) {
-      alert('Error: ' + e.message)
+      console.error('❌ Error en registro:', e)
+      alert('Error detallado: ' + (e.message || 'Error desconocido de red'))
     } finally {
       btn.textContent = oldText
       btn.disabled = false
