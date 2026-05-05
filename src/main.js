@@ -13,7 +13,8 @@ const state = {
   loading: true,
   page: 0,
   pageSize: 50,
-  hasMore: true
+  hasMore: true,
+  isFallback: false // Indica si estamos usando el JSON local
 }
 
 const ARS = new Intl.NumberFormat('es-AR', {
@@ -56,11 +57,9 @@ async function init() {
   try {
     const icons = { LayoutGrid: lucide.LayoutGrid, Clock: lucide.Clock, User: lucide.User, Search: lucide.Search, ShoppingCart: lucide.ShoppingCart, LogOut: lucide.LogOut, CheckCircle: lucide.CheckCircle, ShieldCheck: lucide.ShieldCheck }
     lucide.createIcons({ icons })
-  } catch (e) {
-    console.warn('Icon error', e)
-  }
+  } catch (e) { console.warn('Lucide fail', e) }
 
-  // Listener Auth
+  // Auth Listener
   supabase.auth.onAuthStateChange(async (event, session) => {
     if (session) {
       state.user = session.user
@@ -74,8 +73,14 @@ async function init() {
     renderCart()
   })
 
-  // Carga inicial
-  await fetchProducts()
+  // INTENTO 1: SUPABASE
+  const ok = await fetchProducts()
+  
+  // INTENTO 2: FALLBACK JSON (Si Supabase falló o no tiene datos)
+  if (!ok || state.products.length === 0) {
+    console.warn('⚠️ Usando Fallback de catálogo local (JSON)...')
+    await fetchJsonFallback()
+  }
   
   state.loading = false
   render()
@@ -112,10 +117,29 @@ async function fetchProducts(append = false) {
     else state.products = mapped
 
     state.hasMore = mapped.length === state.pageSize
+    state.isFallback = false
+    return true
   } catch (e) {
-    console.error('Fetch fail', e)
-    state.loading = false
-    if (els.grid) els.grid.innerHTML = '<div style="grid-column:1/-1; text-align:center; padding:50px; color:red;">Error de conexión. Reintenta.</div>'
+    console.error('Supabase fetch failed', e)
+    return false
+  }
+}
+
+async function fetchJsonFallback() {
+  try {
+    const res = await fetch('/catalog.json')
+    const json = await res.json()
+    const raw = json.products || json
+    state.products = raw.map(p => ({
+      sku: p.sku,
+      name: p.name || p.sku,
+      prices: p.prices,
+      img: (p.imageUrls && p.imageUrls[0]) || '/logo.png'
+    }))
+    state.hasMore = false
+    state.isFallback = true
+  } catch (e) {
+    console.error('JSON fallback failed', e)
   }
 }
 
@@ -149,7 +173,7 @@ function render() {
   
   const q = state.query.toLowerCase()
   const filtered = state.products.filter(p => {
-    return p.sku.toLowerCase().includes(q)
+    return p.sku.toLowerCase().includes(q) || p.name.toLowerCase().includes(q)
   })
 
   els.grid.innerHTML = filtered.map(p => {
@@ -228,18 +252,23 @@ function setupEvents() {
   els.search.oninput = async (e) => {
     state.query = e.target.value
     if (state.query.length === 0) {
-      state.page = 0
-      await fetchProducts()
+      if (state.isFallback) await fetchJsonFallback()
+      else { state.page = 0; await fetchProducts(); }
       render()
     } else if (state.query.length > 2) {
-      const { data } = await supabase.from('products').select('*').or(`sku.ilike.%${state.query}%,name.ilike.%${state.query}%`).limit(50)
-      if (data) {
-        state.products = data.map(p => ({
-          sku: p.sku, name: p.name || p.sku, img: p.image_url,
-          prices: { 'Mayorista': p.price_mayorista || 0, 'Especial Mayorista': p.price_especial || 0, 'Súper Especial': p.price_super || 0, 'Distribuidor': p.price_distribuidor || 0 }
-        }))
-        state.hasMore = false
+      if (state.isFallback) {
+        // En fallback filtramos local
         render()
+      } else {
+        const { data } = await supabase.from('products').select('*').or(`sku.ilike.%${state.query}%,name.ilike.%${state.query}%`).limit(50)
+        if (data) {
+          state.products = data.map(p => ({
+            sku: p.sku, name: p.name || p.sku, img: p.image_url,
+            prices: { 'Mayorista': p.price_mayorista || 0, 'Especial Mayorista': p.price_especial || 0, 'Súper Especial': p.price_super || 0, 'Distribuidor': p.price_distribuidor || 0 }
+          }))
+          state.hasMore = false
+          render()
+        }
       }
     }
   }
