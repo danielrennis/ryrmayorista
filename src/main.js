@@ -98,7 +98,7 @@ async function fetchProducts(append = false) {
     
     const mapped = (data || []).map(p => ({
       sku: p.sku,
-      name: p.sku, 
+      name: p.name || p.sku, 
       prices: {
         'Mayorista': p.price_mayorista || 0,
         'Especial Mayorista': p.price_especial || 0,
@@ -232,10 +232,10 @@ function setupEvents() {
       await fetchProducts()
       render()
     } else if (state.query.length > 2) {
-      const { data } = await supabase.from('products').select('*').ilike('sku', `%${state.query}%`).limit(50)
+      const { data } = await supabase.from('products').select('*').or(`sku.ilike.%${state.query}%,name.ilike.%${state.query}%`).limit(50)
       if (data) {
         state.products = data.map(p => ({
-          sku: p.sku, name: p.sku, img: p.image_url,
+          sku: p.sku, name: p.name || p.sku, img: p.image_url,
           prices: { 'Mayorista': p.price_mayorista || 0, 'Especial Mayorista': p.price_especial || 0, 'Súper Especial': p.price_super || 0, 'Distribuidor': p.price_distribuidor || 0 }
         }))
         state.hasMore = false
