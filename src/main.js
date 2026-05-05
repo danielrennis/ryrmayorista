@@ -5,7 +5,7 @@ import { supabase } from './supabase'
 // --- STATE ---
 const state = {
   products: [],
-  catalogCache: {}, // Cache para guardar nombres/precios de productos fuera de la página actual
+  catalogCache: {},
   cart: JSON.parse(localStorage.getItem('ryr_cart_v2') || '{}'),
   user: null,
   profile: null,
@@ -19,9 +19,7 @@ const state = {
 }
 
 const ARS = new Intl.NumberFormat('es-AR', {
-  style: 'currency',
-  currency: 'ARS',
-  minimumFractionDigits: 0
+  style: 'currency', currency: 'ARS', minimumFractionDigits: 0
 })
 
 const $ = (id) => document.getElementById(id)
@@ -60,7 +58,16 @@ async function init() {
 
   supabase.auth.onAuthStateChange(async (event, session) => {
     state.user = session?.user || null
-    if (state.user) await fetchProfile(state.user.id)
+    if (state.user) {
+      await fetchProfile(state.user.id)
+      // Si el usuario está logueado pero NO activo, mostramos el modal de activación
+      if (state.profile && !state.profile.is_active) {
+        els.authModal.classList.add('show')
+        showAuthForm('activation-form')
+      } else {
+        els.authModal.classList.remove('show')
+      }
+    }
     updateAuthUi()
     render()
     renderCart()
@@ -72,23 +79,24 @@ async function init() {
   }, 1000)
 }
 
+function showAuthForm(id) {
+  ['login-form', 'register-form', 'activation-form'].forEach(f => {
+    if ($(f)) $(f).classList.add('hidden')
+  })
+  if ($(id)) $(id).classList.remove('hidden')
+}
+
 async function fetchProducts(append = false) {
   try {
     const from = state.page * state.pageSize
     const to = from + state.pageSize - 1
     const { data, error } = await supabase.from('products').select('*').order('last_buy', { ascending: false, nullsFirst: false }).range(from, to)
     if (error) throw error
-    
     const mapped = (data || []).map(p => {
-      const item = {
-        sku: p.sku, name: p.name || p.sku, 
-        prices: { 'Mayorista': p.price_mayorista || 0, 'Especial Mayorista': p.price_especial || 0, 'Súper Especial': p.price_super || 0, 'Distribuidor': p.price_distribuidor || 0 },
-        img: p.image_url || '/logo.png'
-      }
-      state.catalogCache[p.sku] = item // Alimentamos la cache
+      const item = { sku: p.sku, name: p.name || p.sku, prices: { 'Mayorista': p.price_mayorista || 0, 'Especial Mayorista': p.price_especial || 0, 'Súper Especial': p.price_super || 0, 'Distribuidor': p.price_distribuidor || 0 }, img: p.image_url || '/logo.png' }
+      state.catalogCache[p.sku] = item
       return item
     })
-
     if (append) state.products = [...state.products, ...mapped]
     else state.products = mapped
     state.hasMore = mapped.length === state.pageSize
@@ -107,8 +115,7 @@ async function fetchJsonFallback() {
       state.catalogCache[p.sku] = item
       return item
     })
-    state.hasMore = false
-    state.isFallback = true
+    state.hasMore = false; state.isFallback = true
   } catch (e) {}
 }
 
@@ -122,7 +129,7 @@ async function fetchProfile(uid) {
 
 function updateAuthUi() {
   if (!els.loggedUi) return
-  if (state.user) {
+  if (state.user && state.profile?.is_active) {
     els.unloggedUi.classList.add('hidden'); els.loggedUi.classList.remove('hidden')
     els.userEmail.textContent = state.user.email
     if (state.profile?.is_admin) els.adminBtn.classList.remove('hidden')
@@ -145,12 +152,12 @@ function render() {
         <div class="img"><img src="${p.img || '/logo.png'}" onerror="this.src='/logo.png'"></div>
         <div class="body">
           <div class="name">${p.name}</div>
-          ${state.user ? `<div class="price">${ARS.format(price)}</div>` : `<div class="price" onclick="$('auth-modal').classList.add('show')" style="cursor:pointer; font-size:12px; color:var(--muted);">Ver precios</div>`}
+          ${state.user && state.profile?.is_active ? `<div class="price">${ARS.format(price)}</div>` : `<div class="price" onclick="$('auth-modal').classList.add('show')" style="cursor:pointer; font-size:12px; color:var(--muted);">Ingresá para ver precios</div>`}
           
-          ${isDist && state.user ? `<div style="font-size:11px; color:var(--accent); font-weight:700; margin-top:4px; opacity:0.8;">Lista Distribuidor: ${ARS.format(p.prices['Distribuidor'])}</div>` : ''}
+          ${isDist && state.user && state.profile?.is_active ? `<div style="font-size:11px; color:var(--accent); font-weight:700; margin-top:4px; opacity:0.8;">Lista Distribuidor: ${ARS.format(p.prices['Distribuidor'])}</div>` : ''}
 
           <div class="controls">
-            ${state.user ? `
+            ${state.user && state.profile?.is_active ? `
               <div class="qty-box"><button class="qty-btn" onclick="window.modQty('${p.sku}', -1)">-</button><span class="qty-val">${qty}</span><button class="qty-btn" onclick="window.modQty('${p.sku}', 1)">+</button></div>
               <button class="btn-add" onclick="window.modQty('${p.sku}', 1)">SUMAR</button>
             ` : `<button class="btn-add" onclick="$('auth-modal').classList.add('show')">INGRESAR</button>`}
@@ -159,7 +166,6 @@ function render() {
       </div>
     `
   }).join('')
-
   if (state.hasMore && !state.isFallback && state.query.length === 0) {
     els.grid.innerHTML += `<div style="grid-column:1/-1; text-align:center; padding:20px;"><button id="btn-load-more" class="tile" style="margin:0 auto; cursor:pointer; font-weight:800; padding:0 40px;">VER MÁS</button></div>`
     setTimeout(() => { if($('btn-load-more')) $('btn-load-more').onclick = window.loadMore }, 10)
@@ -169,17 +175,11 @@ function render() {
 async function renderCart() {
   if (!els.cartItems) return
   let total = 0, count = 0
-  const skus = Object.keys(state.cart)
-  
-  // Buscar SKUs faltantes en la base de datos para el carrito
-  const missing = skus.filter(s => !state.catalogCache[s])
+  const missing = Object.keys(state.cart).filter(s => !state.catalogCache[s])
   if (missing.length > 0 && !state.isFallback) {
     const { data } = await supabase.from('products').select('*').in('sku', missing)
-    if (data) data.forEach(p => {
-      state.catalogCache[p.sku] = { sku: p.sku, name: p.name || p.sku, img: p.image_url, prices: { 'Mayorista': p.price_mayorista || 0, 'Especial Mayorista': p.price_especial || 0, 'Súper Especial': p.price_super || 0, 'Distribuidor': p.price_distribuidor || 0 } }
-    })
+    if (data) data.forEach(p => { state.catalogCache[p.sku] = { sku: p.sku, name: p.name || p.sku, img: p.image_url, prices: { 'Mayorista': p.price_mayorista || 0, 'Especial Mayorista': p.price_especial || 0, 'Súper Especial': p.price_super || 0, 'Distribuidor': p.price_distribuidor || 0 } } })
   }
-
   const html = Object.entries(state.cart).map(([sku, qty]) => {
     const p = state.catalogCache[sku]
     if (!p) return ''
@@ -191,10 +191,8 @@ async function renderCart() {
       <button onclick="window.modQty('${sku}', -999)" style="background:none; border:none; cursor:pointer; font-size:18px;">&times;</button>
     </div>`
   }).join('')
-  
   els.cartItems.innerHTML = html || '<p style="text-align:center; padding:40px;">Vacío</p>'
-  els.cartTotal.textContent = ARS.format(total)
-  els.cartCount.textContent = count
+  els.cartTotal.textContent = ARS.format(total); els.cartCount.textContent = count
   localStorage.setItem('ryr_cart_v2', JSON.stringify(state.cart))
 }
 
@@ -215,27 +213,24 @@ function setupEvents() {
     } else { render() }
   }
 
-  $('btn-open-login').onclick = () => els.authModal.classList.add('show')
+  els.tierSelect.onchange = (e) => { state.tier = e.target.value; render(); renderCart(); }
+  $('btn-cart').onclick = () => { els.cartDrawer.classList.add('show'); renderCart(); }
+  $('btn-open-login').onclick = () => { els.authModal.classList.add('show'); showAuthForm('login-form'); }
   
-  // Navegación interna del Login/Registro
-  $('go-register').onclick = (e) => { e.preventDefault(); $('login-form').classList.add('hidden'); $('register-form').classList.remove('hidden'); }
-  $('go-login').onclick = (e) => { e.preventDefault(); $('register-form').classList.add('hidden'); $('login-form').classList.remove('hidden'); }
+  // Navegación Auth
+  $('go-register').onclick = (e) => { e.preventDefault(); showAuthForm('register-form'); }
+  $('go-login').onclick = (e) => { e.preventDefault(); showAuthForm('login-form'); }
 
   $('btn-history').onclick = async () => {
     if (!state.user) return alert('Iniciá sesión')
     els.historyDrawer.classList.add('show')
     const { data } = await supabase.from('orders').select('*').eq('user_id', state.user.id).order('created_at', { ascending: false })
-    
-    // Pre-cargar nombres de productos del historial si no están en cache
     const allSkusInHistory = [...new Set((data || []).flatMap(o => Object.keys(o.items)))]
     const missing = allSkusInHistory.filter(s => !state.catalogCache[s])
     if (missing.length > 0 && !state.isFallback) {
        const { data: pData } = await supabase.from('products').select('*').in('sku', missing)
-       if (pData) pData.forEach(p => {
-         state.catalogCache[p.sku] = { sku: p.sku, name: p.name || p.sku, img: p.image_url, prices: { 'Mayorista': p.price_mayorista || 0, 'Especial Mayorista': p.price_especial || 0, 'Súper Especial': p.price_super || 0, 'Distribuidor': p.price_distribuidor || 0 } }
-       })
+       if (pData) pData.forEach(p => { state.catalogCache[p.sku] = { sku: p.sku, name: p.name || p.sku, img: p.image_url, prices: { 'Mayorista': p.price_mayorista || 0, 'Especial Mayorista': p.price_especial || 0, 'Súper Especial': p.price_super || 0, 'Distribuidor': p.price_distribuidor || 0 } } })
     }
-
     $('history-content').innerHTML = (data || []).map(o => `
       <div class="history-card" style="padding:15px; border-bottom:1px solid var(--line);">
         <div style="display:flex; justify-content:space-between; align-items:start;">
@@ -248,12 +243,7 @@ function setupEvents() {
             </div>
           </div>
         </div>
-        <details style="margin-top:10px; font-size:12px; color:var(--muted);">
-          <summary style="cursor:pointer; font-weight:700;">Ver detalle de productos</summary>
-          <div style="padding-top:8px;">
-            ${Object.entries(o.items).map(([sku, q]) => `• ${q} x ${state.catalogCache[sku]?.name || sku}<br>`).join('')}
-          </div>
-        </details>
+        <details style="margin-top:10px; font-size:12px; color:var(--muted);"><summary style="cursor:pointer; font-weight:700;">Ver detalle de productos</summary><div style="padding-top:8px;">${Object.entries(o.items).map(([sku, q]) => `• ${q} x ${state.catalogCache[sku]?.name || sku}<br>`).join('')}</div></details>
       </div>
     `).join('') || '<p style="text-align:center; padding:20px;">No hay pedidos</p>'
   }
@@ -272,18 +262,27 @@ function setupEvents() {
   }
 
   $('btn-do-register').onclick = async () => {
-    const email = $('reg-email').value
-    const pass = $('reg-pass').value
-    const name = $('reg-name').value
-    const dni = $('reg-dni').value
+    const email = $('reg-email').value, pass = $('reg-pass').value, name = $('reg-name').value, dni = $('reg-dni').value
     if (!email || !pass || !name) return alert('Completá todos los campos')
-    
-    const { data, error } = await signUp(email, pass, { full_name: name, dni_cuit: dni })
+    const { error } = await signUp(email, pass, { full_name: name, dni_cuit: dni })
     if (error) return alert(error.message)
-    
     alert('✅ Solicitud enviada. Pedile tu código de activación a Emanuel.')
-    $('register-form').classList.add('hidden')
-    $('activation-form').classList.remove('hidden')
+    showAuthForm('activation-form')
+  }
+
+  $('btn-do-activate').onclick = async () => {
+    const code = $('activate-code').value
+    if (!code) return alert('Ingresá el código')
+    const { data, error } = await supabase.from('profiles').select('*').eq('id', state.user.id).eq('verification_code', code).maybeSingle()
+    if (error || !data) return alert('Código incorrecto. Verificá con Emanuel.')
+    const { error: upErr } = await supabase.from('profiles').update({ is_active: true }).eq('id', state.user.id)
+    if (upErr) return alert(upErr.message)
+    alert('🎉 ¡Cuenta activada con éxito!')
+    location.reload()
+  }
+
+  $('btn-wa-emanuel').onclick = () => {
+    window.open('https://wa.me/5493624250452?text=Hola%20Emanuel,%20necesito%20mi%20código%20de%20acceso%20para%20el%20carrito.', '_blank')
   }
 
   $('btn-logout').onclick = async () => { await signOut(); location.reload(); }
@@ -296,20 +295,8 @@ function setupEvents() {
     }, 0)
     const { data, error } = await supabase.from('orders').insert({ user_id: state.user.id, total, items: state.cart }).select().single()
     if (error) return alert(error.message)
-    const waUrl = `https://api.whatsapp.com/send?phone=5493624250452&text=${encodeURIComponent(`Soy ${state.profile?.full_name || 'Cliente'}. Confirmé el pedido #${data.id.slice(0,6)} por ${ARS.format(total)}`)}`
-    
-    // Limpiamos UI primero
-    state.cart = {}
-    renderCart()
-    render()
-    els.cartDrawer.classList.remove('show')
-    
-    // Abrimos WhatsApp
-    window.open(waUrl, '_blank')
-    
-    setTimeout(() => {
-      alert('✅ ¡Pedido guardado y enviado a WhatsApp!')
-    }, 500)
+    window.open(`https://api.whatsapp.com/send?phone=5493624250452&text=${encodeURIComponent(`Soy ${state.profile?.full_name || 'Cliente'}. Confirmé el pedido #${data.id.slice(0,6)} por ${ARS.format(total)}`)}`, '_blank')
+    state.cart = {}; renderCart(); render(); els.cartDrawer.classList.remove('show'); setTimeout(()=>alert('✅ Pedido guardado y enviado!'), 500);
   }
 }
 
@@ -324,41 +311,17 @@ window.modQty = (sku, delta) => {
 window.deleteOrder = async (id) => { if (confirm('¿Eliminar?')) { await supabase.from('orders').delete().eq('id', id); $('btn-history').click(); } }
 window.reOpenOrder = async (id) => {
   const { data } = await supabase.from('orders').select('items').eq('id', id).single()
-  if (data) { 
-    state.cart = { ...state.cart, ...data.items }; 
-    await renderCart(); 
-    render(); 
-    els.historyDrawer.classList.remove('show'); 
-    els.cartDrawer.classList.add('show'); 
-  }
+  if (data) { state.cart = { ...state.cart, ...data.items }; await renderCart(); render(); els.historyDrawer.classList.remove('show'); els.cartDrawer.classList.add('show'); }
 }
 
 async function renderAdminOrders() {
   const { data } = await supabase.from('orders').select('*, profiles(full_name)').order('created_at', { ascending: false })
-  els.adminContent.innerHTML = `
-    <table style="width:100%; font-size:12px; border-collapse:collapse;">
-      ${(data || []).map(o => `
-        <tr style="border-bottom:1px solid var(--line);">
-          <td style="padding:10px;"><b>${o.profiles?.full_name || 'Cliente'}</b></td>
-          <td style="padding:10px;">${ARS.format(o.total)}</td>
-          <td style="padding:10px;"><details><summary style="cursor:pointer; color:var(--accent);">Items</summary>${Object.entries(o.items).map(([s,q])=>`• ${q}x ${state.catalogCache[s]?.name || s}<br>`).join('')}</details></td>
-        </tr>
-      `).join('')}
-    </table>
-  `
+  els.adminContent.innerHTML = `<table style="width:100%; font-size:12px; border-collapse:collapse;">${(data || []).map(o => `<tr style="border-bottom:1px solid var(--line);"><td style="padding:10px;"><b>${o.profiles?.full_name || 'Cliente'}</b></td><td style="padding:10px;">${ARS.format(o.total)}</td><td style="padding:10px;"><details><summary style="cursor:pointer; color:var(--accent);">Items</summary>${Object.entries(o.items).map(([s,q])=>`• ${q}x ${state.catalogCache[s]?.name || s}<br>`).join('')}</details></td></tr>`).join('')}</table>`
 }
 
 async function renderAdminUsers() {
   const { data } = await supabase.from('profiles').select('*').eq('is_active', false)
-  els.adminContent.innerHTML = (data || []).map(u => `
-    <div class="tile" style="height:auto; padding:15px; flex-direction:column; align-items:start; gap:10px;">
-      <b>${u.full_name}</b> (${u.dni_cuit})
-      <div style="display:flex; gap:10px; width:100%;">
-        <input id="vcode-${u.id}" placeholder="Código" class="auth-btn" style="flex:1; height:32px;">
-        <button class="btn-add" onclick="window.activateUser('${u.id}')" style="height:32px;">ACTIVAR</button>
-      </div>
-    </div>
-  `).join('') || '<p>No hay clientes pendientes</p>'
+  els.adminContent.innerHTML = (data || []).map(u => `<div class="tile" style="height:auto; padding:15px; flex-direction:column; align-items:start; gap:10px;"><b>${u.full_name}</b> (${u.dni_cuit})<div style="display:flex; gap:10px; width:100%;"><input id="vcode-${u.id}" placeholder="Código" class="auth-btn" style="flex:1; height:32px;"><button class="btn-add" onclick="window.activateUser('${u.id}')" style="height:32px;">ACTIVAR</button></div></div>`).join('') || '<p>No hay clientes pendientes</p>'
 }
 
 window.activateUser = async (uid) => {
