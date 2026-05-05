@@ -304,8 +304,10 @@ function setupEvents() {
     
     console.log('📋 Datos de perfil encontrados:', data)
     
-    if (error || !data || !data.verification_code || data.verification_code.toUpperCase() !== code) {
-      return alert('Código incorrecto. El código que Emanuel asignó es diferente al que ingresaste.')
+    const dbCode = (data?.verification_code || '').trim().toUpperCase()
+    
+    if (error || !data || dbCode !== code) {
+      return alert(`Código Incorrecto.\n\nEn la base de datos dice: "${dbCode}"\nVos ingresaste: "${code}"\n\nSi el código en la base de datos está vacío, es porque el guardado desde el panel de Admin falló.`);
     }
     
     // Si coincide, lo activamos
