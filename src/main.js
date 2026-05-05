@@ -58,9 +58,23 @@ async function init() {
 
   supabase.auth.onAuthStateChange(async (event, session) => {
     state.user = session?.user || null
+    console.log('👤 Auth Change:', event, state.user?.email)
+    
     if (state.user) {
       await fetchProfile(state.user.id)
-      // Si el usuario está logueado pero NO activo, mostramos el modal de activación
+      
+      // AUTO-SANACIÓN: Si no existe el perfil, lo creamos de emergencia
+      if (!state.profile) {
+        console.log('🛠 Creando perfil de emergencia...')
+        const { data: newProf } = await supabase.from('profiles').insert({
+          id: state.user.id,
+          full_name: state.user.user_metadata?.full_name || state.user.email,
+          dni_cuit: state.user.user_metadata?.dni_cuit || '',
+          is_active: false
+        }).select().single()
+        state.profile = newProf
+      }
+
       if (state.profile && !state.profile.is_active) {
         els.authModal.classList.add('show')
         showAuthForm('activation-form')
@@ -121,10 +135,8 @@ async function fetchJsonFallback() {
 
 async function fetchProfile(uid) {
   const { data } = await supabase.from('profiles').select('*').eq('id', uid).maybeSingle()
-  if (data) {
-    state.profile = data
-    if (data.assigned_tier) state.tier = data.assigned_tier
-  }
+  state.profile = data || null
+  if (data && data.assigned_tier) state.tier = data.assigned_tier
 }
 
 function updateAuthUi() {
@@ -264,28 +276,17 @@ function setupEvents() {
   $('btn-do-register').onclick = async () => {
     const email = $('reg-email').value, pass = $('reg-pass').value, name = $('reg-name').value, dni = $('reg-dni').value
     if (!email || !pass || !name) return alert('Completá todos los campos')
-    
     const btn = $('btn-do-register')
-    const oldText = btn.textContent
-    btn.textContent = 'PROCESANDO...'
-    btn.disabled = true
-
+    const oldText = btn.textContent; btn.textContent = 'PROCESANDO...'; btn.disabled = true
     try {
-      console.log('🚀 Intentando registro para:', email)
-      
-      // Timeout de seguridad de 10 segundos
-      const timeout = new Promise((_, reject) => setTimeout(() => reject(new Error('Tiempo de espera agotado. Verificá si el usuario se creó en el panel.')), 10000))
-      const res = await Promise.race([signUp(email, pass, { full_name: name, dni_cuit: dni }), timeout])
-      
-      console.log('✅ Respuesta Supabase:', res)
+      const timeout = new Promise((_, reject) => setTimeout(() => reject(new Error('Tiempo de espera agotado.')), 10000))
+      await Promise.race([signUp(email, pass, { full_name: name, dni_cuit: dni }), timeout])
       alert('✅ Solicitud enviada. Pedile tu código de activación a Emanuel.')
       showAuthForm('activation-form')
     } catch (e) {
-      console.error('❌ Error en registro:', e)
-      alert('Error detallado: ' + (e.message || 'Error desconocido de red'))
+      alert('Error: ' + e.message)
     } finally {
-      btn.textContent = oldText
-      btn.disabled = false
+      btn.textContent = oldText; btn.disabled = false
     }
   }
 
