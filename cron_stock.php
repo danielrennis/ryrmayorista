@@ -161,6 +161,13 @@ foreach ($chunks as $chunk) {
 }
 echo PHP_EOL . "Sincronización Supabase finalizada." . PHP_EOL;
 
+// --- SINCRONIZACIÓN CON GITHUB (Para actualizar el JSON de respaldo en la web) ---
+echo "Subiendo catalog.json al repositorio..." . PHP_EOL;
+shell_exec("git add public/catalog.json"); // Aseguramos que apunte a public/
+shell_exec("git commit -m 'Cron: Actualización automática de stock y precios'");
+$push_output = shell_exec("git push origin main 2>&1");
+echo $push_output . PHP_EOL;
+
 // --- FIN DEL PROCESO ---
 echo PHP_EOL . "Proceso finalizado a las: " . date('H:i:s') . PHP_EOL;
 $t_end = microtime(true);
