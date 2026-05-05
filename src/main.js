@@ -148,6 +148,9 @@ function render() {
         <div class="body">
           <div class="name">${p.name}</div>
           ${state.user ? `<div class="price">${ARS.format(price)}</div>` : `<div class="price" onclick="$('auth-modal').classList.add('show')" style="cursor:pointer; font-size:12px; color:var(--muted);">Ver precios</div>`}
+          
+          ${isDist && state.user ? `<div style="font-size:11px; color:var(--accent); font-weight:700; margin-top:4px; opacity:0.8;">Lista Distribuidor: ${ARS.format(p.prices['Distribuidor'])}</div>` : ''}
+
           <div class="controls">
             ${state.user ? `
               <div class="qty-box"><button class="qty-btn" onclick="window.modQty('${p.sku}', -1)">-</button><span class="qty-val">${qty}</span><button class="qty-btn" onclick="window.modQty('${p.sku}', 1)">+</button></div>
