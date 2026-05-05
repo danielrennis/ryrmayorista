@@ -144,6 +144,7 @@ foreach ($chunks as $chunk) {
     curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
     curl_setopt($ch, CURLOPT_POST, true);
     curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($chunk));
+    curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false); // FIX para Windows: Ignora falta de certificado local
     curl_setopt($ch, CURLOPT_HTTPHEADER, array(
         'apikey: ' . $supabase_key,
         'Authorization: Bearer ' . $supabase_key,
